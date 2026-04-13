@@ -30,4 +30,4 @@ rapidfuzz>=3.0
 loguru>=0.7
 
 # Optional: PostgreSQL support
-# asyncpg>=0.29
+asyncpg>=0.29
