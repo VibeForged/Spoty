@@ -10,10 +10,12 @@ import sys
 from pathlib import Path
 
 import discord
+import wavelink
 from discord.ext import commands
 from loguru import logger
 
 from config import BotConfig
+from core.backend_manager import BackendManager
 from core.database import close_db, init_db
 from core.models import GuildSettings
 from core.player import MusicPlayer
@@ -65,6 +67,7 @@ class MusicBot(commands.Bot):
 
         # Cache for guild settings
         self._settings_cache: dict[int, GuildSettings] = {}
+        self.backend_manager = BackendManager(self)
 
     async def get_guild_settings(self, guild_id: int) -> GuildSettings | None:
         """Get guild settings with in-memory caching."""
@@ -83,10 +86,23 @@ class MusicBot(commands.Bot):
         """Get the music player for a guild."""
         return self.players.get(guild_id)
 
+    async def create_player(
+        self,
+        guild_id: int,
+        channel: discord.VoiceChannel,
+        text_channel: discord.TextChannel | None = None,
+    ) -> MusicPlayer:
+        """Create and register a backend-aware player for a guild."""
+        player = await MusicPlayer.create(self, guild_id, channel)
+        player.text_channel = text_channel
+        self.players[guild_id] = player
+        return player
+
     async def setup_hook(self) -> None:
         """Called after login, before connecting to the gateway."""
         # Initialize database
         await init_db(self.config.database_url)
+        await self.backend_manager.setup()
 
         # Auto-update yt-dlp if configured
         if self.config.ytdlp_auto_update:
@@ -107,10 +123,15 @@ class MusicBot(commands.Bot):
                 logger.error("Failed to load cog {}: {}", cog, e)
 
         logger.info("Setup complete — {} cogs loaded", len(self.extensions))
+        logger.info("Audio backend status: {}", self.backend_manager.backend_status())
 
     async def on_ready(self) -> None:
         logger.info("Bot ready as {} (ID: {})", self.user, self.user.id)
         logger.info("Connected to {} guilds", len(self.guilds))
+
+        if self.config.lavalink_enabled and not self.backend_manager.lavalink_ready:
+            await self.backend_manager.ensure_ready()
+            logger.info("Audio backend status after ready: {}", self.backend_manager.backend_status())
 
         # Set activity
         await self.change_presence(
@@ -146,7 +167,7 @@ class MusicBot(commands.Bot):
             # Bot was disconnected
             if before.channel and not after.channel:
                 player = self.players.get(member.guild.id)
-                if player:
+                if player and not getattr(player, "_backend_switch_in_progress", False):
                     await player.destroy()
             return
 
@@ -227,6 +248,47 @@ class MusicBot(commands.Bot):
             delete_after=10,
         )
 
+    async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload) -> None:
+        self.backend_manager.last_lavalink_error = None
+        self.backend_manager.refresh_lavalink_state()
+        logger.info("Lavalink node ready: {}", payload.node.identifier)
+
+    async def on_wavelink_node_disconnected(
+        self, payload: wavelink.NodeDisconnectedEventPayload
+    ) -> None:
+        self.backend_manager.last_lavalink_error = "node disconnected"
+        self.backend_manager.refresh_lavalink_state()
+        logger.warning("Lavalink node disconnected: {}", payload.node.identifier)
+
+    async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload) -> None:
+        if payload.player is None or payload.player.guild is None:
+            return
+        player = self.players.get(payload.player.guild.id)
+        if player:
+            await player.handle_lavalink_event()
+
+    async def on_wavelink_track_exception(
+        self, payload: wavelink.TrackExceptionEventPayload
+    ) -> None:
+        if payload.player is None or payload.player.guild is None:
+            return
+        player = self.players.get(payload.player.guild.id)
+        if player:
+            if isinstance(payload.exception, dict):
+                message = payload.exception.get("message", "Unknown Lavalink exception")
+            else:
+                message = str(payload.exception)
+            await player.handle_lavalink_event(Exception(message))
+
+    async def on_wavelink_websocket_closed(
+        self, payload: wavelink.WebsocketClosedEventPayload
+    ) -> None:
+        if payload.player is None or payload.player.guild is None:
+            return
+        player = self.players.get(payload.player.guild.id)
+        if player:
+            await player.handle_lavalink_event(Exception(f"Websocket closed: {payload.reason}"))
+
     async def close(self) -> None:
         """Graceful shutdown — destroy all players and close DB."""
         logger.info("Shutting down...")
@@ -236,6 +298,8 @@ class MusicBot(commands.Bot):
             player = self.players.get(guild_id)
             if player:
                 await player.destroy()
+
+        await self.backend_manager.shutdown()
 
         # Close database
         await close_db()

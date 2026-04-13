@@ -124,6 +124,8 @@ class FXPreset(Base):
     guild_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     filter_string: Mapped[str] = mapped_column(Text, nullable=False)
+    preset_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_compatible: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

@@ -55,19 +55,14 @@ class Music(commands.Cog):
         channel = ctx.author.voice.channel
 
         try:
-            voice_client = await channel.connect(self_deaf=True)
+            player = await self.bot.create_player(guild_id, channel, ctx.channel)
         except Exception as e:
             raise VoiceConnectionFailed(str(e))
-
-        player = MusicPlayer(self.bot, guild_id, voice_client)
-        player.text_channel = ctx.channel
-        self.bot.players[guild_id] = player
 
         # Load guild default volume
         settings = await self.bot.get_guild_settings(guild_id)
         if settings:
             player.volume = settings.default_volume
-            player._backend._volume = settings.default_volume
 
         return player
 
@@ -262,11 +257,8 @@ class Music(commands.Cog):
             return
 
         try:
-            vc = await target.connect(self_deaf=True)
-            player = MusicPlayer(self.bot, ctx.guild.id, vc)
-            player.text_channel = ctx.channel
-            self.bot.players[ctx.guild.id] = player
-            await ctx.send(f"Joined **{target.name}**")
+            player = await self.bot.create_player(ctx.guild.id, target, ctx.channel)
+            await ctx.send(f"Joined **{target.name}** using **{player.backend_name}**")
         except Exception as e:
             raise VoiceConnectionFailed(str(e))
 

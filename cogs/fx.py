@@ -13,7 +13,13 @@ from discord.ext import commands
 
 from core.checks import cooldown, is_dj
 from core.errors import BotNotConnected, NothingPlaying, PresetNotFound
-from core.filters import BUILTIN_PRESETS, PRESET_DESCRIPTIONS, WARNING_PRESETS
+from core.filters import (
+    BUILTIN_PRESETS,
+    PRESET_DESCRIPTIONS,
+    WARNING_PRESETS,
+    parse_preset_input,
+    summarize_preset_definition,
+)
 
 if TYPE_CHECKING:
     from bot import MusicBot
@@ -134,7 +140,11 @@ class FX(commands.Cog):
 
         custom_presets = await FXPresetRepo.list_for_guild(ctx.guild.id)
         if custom_presets:
-            custom_lines = [f"`{p.name}` — {p.filter_string[:50]}" for p in custom_presets]
+            custom_lines = []
+            for preset in custom_presets:
+                definition = FXPresetRepo.get_definition(preset)
+                summary = summarize_preset_definition(definition or {})
+                custom_lines.append(f"`{preset.name}` — {summary}")
             embed.add_field(
                 name="Custom",
                 value="\n".join(custom_lines),
@@ -144,11 +154,14 @@ class FX(commands.Cog):
         await ctx.send(embed=embed)
 
     @fxpreset.command(name="create", description="Create a custom FX preset")
-    @app_commands.describe(name="Preset name", filters="FFmpeg audio filter string")
+    @app_commands.describe(
+        name="Preset name",
+        filters="Structured preset JSON or a legacy raw FFmpeg filter string",
+    )
     @is_dj()
     @cooldown(1, 5.0)
     async def fxpreset_create(self, ctx: commands.Context, name: str, *, filters: str) -> None:
-        """Create a custom FX preset with an FFmpeg filter string."""
+        """Create a custom FX preset from structured JSON or a legacy filter string."""
         from core.repositories import FXPresetRepo
 
         existing = await FXPresetRepo.get_by_name(ctx.guild.id, name.lower())
@@ -156,8 +169,16 @@ class FX(commands.Cog):
             await ctx.send(f"A preset named `{name}` already exists.", ephemeral=True)
             return
 
-        await FXPresetRepo.create(ctx.guild.id, name.lower(), filters, ctx.author.id)
-        await ctx.send(f"Created preset **{name}** with filter: `{filters}`")
+        try:
+            definition = parse_preset_input(filters)
+        except ValueError as exc:
+            await ctx.send(str(exc), ephemeral=True)
+            return
+
+        await FXPresetRepo.create(ctx.guild.id, name.lower(), definition, ctx.author.id)
+        await ctx.send(
+            f"Created preset **{name}** with effects: {summarize_preset_definition(definition)}"
+        )
 
     @fxpreset.command(name="delete", description="Delete a custom FX preset")
     @app_commands.describe(name="Preset name to delete")

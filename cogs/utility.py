@@ -101,6 +101,7 @@ class Utility(commands.Cog):
             inline=True,
         )
         embed.add_field(name="discord.py", value=discord.__version__, inline=True)
+        embed.add_field(name="Audio", value=self.bot.backend_manager.backend_status(), inline=False)
         embed.set_footer(text="Open source music bot")
         await ctx.send(embed=embed)
 
@@ -284,6 +285,23 @@ class Utility(commands.Cog):
             embed=discord.Embed(
                 title="Voice Region",
                 description=f"Region: **{region}**\nLatency: **{latency}ms**",
+                color=discord.Color.blue(),
+            )
+        )
+
+    @commands.hybrid_command(name="backend", description="Show the active audio backend")
+    @cooldown(1, 5.0)
+    async def backend(self, ctx: commands.Context) -> None:
+        """Show guild backend and global backend health."""
+        player = self.bot.get_player(ctx.guild.id)
+        guild_backend = player.backend_name if player else "not connected"
+        await ctx.send(
+            embed=discord.Embed(
+                title="Audio Backend",
+                description=(
+                    f"Guild backend: **{guild_backend}**\n"
+                    f"Global status: **{self.bot.backend_manager.backend_status()}**"
+                ),
                 color=discord.Color.blue(),
             )
         )

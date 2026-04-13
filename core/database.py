@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from loguru import logger
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -44,8 +45,30 @@ async def init_db(database_url: str) -> None:
 
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _run_schema_upgrades(conn)
 
     logger.info("Database initialized successfully")
+
+
+async def _run_schema_upgrades(conn) -> None:
+    """Apply lightweight additive schema upgrades for existing installations."""
+    dialect = conn.dialect.name
+    columns = await conn.run_sync(
+        lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("fx_presets")}
+    )
+
+    statements: list[str] = []
+    if "preset_data" not in columns:
+        statements.append("ALTER TABLE fx_presets ADD COLUMN preset_data TEXT")
+    if "is_compatible" not in columns:
+        if dialect == "postgresql":
+            statements.append("ALTER TABLE fx_presets ADD COLUMN is_compatible BOOLEAN DEFAULT TRUE")
+        else:
+            statements.append("ALTER TABLE fx_presets ADD COLUMN is_compatible BOOLEAN DEFAULT 1")
+
+    for statement in statements:
+        logger.info("Applying schema upgrade: {}", statement)
+        await conn.execute(text(statement))
 
 
 async def close_db() -> None:
