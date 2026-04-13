@@ -29,8 +29,9 @@ class BotConfig(BaseSettings):
     # --- Lavalink ---
     lavalink_enabled: bool = True
     lavalink_host: str = "localhost"
-    lavalink_port: int = 2333
+    lavalink_port: int = 8080
     lavalink_password: str = "youshallnotpass"
+    lavalink_secure: bool = False
 
     # --- FFmpeg ---
     ffmpeg_path: str = "ffmpeg"

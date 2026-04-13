@@ -85,6 +85,11 @@ class Dev(commands.Cog):
         embed.add_field(name="Active Players", value=str(len(self.bot.players)), inline=True)
         embed.add_field(name="DB Size", value=db_size, inline=True)
         embed.add_field(
+            name="Audio Backend",
+            value=self.bot.backend_manager.backend_status(),
+            inline=False,
+        )
+        embed.add_field(
             name="Loaded Cogs",
             value=", ".join(self.bot.cogs.keys()),
             inline=False,

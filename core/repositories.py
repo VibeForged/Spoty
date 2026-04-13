@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from loguru import logger
 from sqlalchemy import delete, select, update
 
 from core.database import get_session
+from core.filters import (
+    build_ffmpeg_filter_string,
+    deserialize_preset_definition,
+    legacy_filter_string_to_definition,
+    normalize_preset_definition,
+    serialize_preset_definition,
+)
 from core.models import (
     FXPreset,
     GuildSettings,
@@ -241,14 +249,22 @@ class FXPresetRepo:
 
     @staticmethod
     async def create(
-        guild_id: int, name: str, filter_string: str, created_by: int
+        guild_id: int,
+        name: str,
+        preset_definition: dict[str, Any],
+        created_by: int,
+        *,
+        is_compatible: bool = True,
     ) -> FXPreset:
         """Create a new custom FX preset."""
         async with get_session() as session:
+            normalized = normalize_preset_definition(preset_definition)
             preset = FXPreset(
                 guild_id=guild_id,
                 name=name,
-                filter_string=filter_string,
+                filter_string=build_ffmpeg_filter_string(normalized) or "",
+                preset_data=serialize_preset_definition(normalized),
+                is_compatible=is_compatible,
                 created_by=created_by,
             )
             session.add(preset)
@@ -264,7 +280,10 @@ class FXPresetRepo:
                     FXPreset.guild_id == guild_id, FXPreset.name == name
                 )
             )
-            return result.scalar_one_or_none()
+            preset = result.scalar_one_or_none()
+            if preset:
+                await FXPresetRepo._migrate_loaded_preset(session, preset)
+            return preset
 
     @staticmethod
     async def list_for_guild(guild_id: int) -> list[FXPreset]:
@@ -275,7 +294,10 @@ class FXPresetRepo:
                 .where(FXPreset.guild_id == guild_id)
                 .order_by(FXPreset.name)
             )
-            return list(result.scalars().all())
+            presets = list(result.scalars().all())
+            for preset in presets:
+                await FXPresetRepo._migrate_loaded_preset(session, preset)
+            return presets
 
     @staticmethod
     async def delete_preset(guild_id: int, name: str) -> bool:
@@ -298,6 +320,31 @@ class FXPresetRepo:
                 .values(name=new_name)
             )
             return result.rowcount > 0
+
+    @staticmethod
+    async def _migrate_loaded_preset(session, preset: FXPreset) -> None:
+        """Backfill structured preset data for legacy rows."""
+        if preset.preset_data:
+            return
+
+        definition = legacy_filter_string_to_definition(preset.filter_string)
+        if definition is None:
+            return
+
+        normalized = normalize_preset_definition(definition)
+        preset.preset_data = serialize_preset_definition(normalized)
+        preset.is_compatible = True
+        if not preset.filter_string:
+            preset.filter_string = build_ffmpeg_filter_string(normalized) or ""
+        await session.flush()
+
+    @staticmethod
+    def get_definition(preset: FXPreset) -> dict[str, Any] | None:
+        """Return the structured definition for a preset model."""
+        definition = deserialize_preset_definition(preset.preset_data)
+        if definition is not None:
+            return definition
+        return legacy_filter_string_to_definition(preset.filter_string)
 
 
 class StatsRepo:
