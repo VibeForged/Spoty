@@ -1,0 +1,177 @@
+"""Custom exception hierarchy for the music bot."""
+
+from __future__ import annotations
+
+from discord.app_commands import AppCommandError
+
+
+class MusicBotError(AppCommandError):
+    """Base exception for all music bot errors."""
+
+    def __init__(self, message: str = "An error occurred.") -> None:
+        self.message = message
+        super().__init__(message)
+
+
+# --- Voice Errors ---
+
+
+class VoiceError(MusicBotError):
+    """Base exception for voice-related errors."""
+
+
+class NotInVoiceChannel(VoiceError):
+    """User is not in a voice channel."""
+
+    def __init__(self) -> None:
+        super().__init__("You must be in a voice channel to use this command.")
+
+
+class BotNotConnected(VoiceError):
+    """Bot is not connected to a voice channel."""
+
+    def __init__(self) -> None:
+        super().__init__("I'm not connected to a voice channel.")
+
+
+class DifferentVoiceChannel(VoiceError):
+    """User is in a different voice channel than the bot."""
+
+    def __init__(self) -> None:
+        super().__init__("You must be in the same voice channel as me.")
+
+
+class VoiceConnectionFailed(VoiceError):
+    """Failed to connect to a voice channel."""
+
+    def __init__(self, reason: str = "Unknown error") -> None:
+        super().__init__(f"Failed to connect to voice channel: {reason}")
+
+
+# --- Playback Errors ---
+
+
+class PlaybackError(MusicBotError):
+    """Base exception for playback-related errors."""
+
+
+class TrackNotFound(PlaybackError):
+    """No results found for a search query."""
+
+    def __init__(self, query: str) -> None:
+        super().__init__(f"No results found for: {query}")
+
+
+class ExtractionFailed(PlaybackError):
+    """yt-dlp extraction failed."""
+
+    def __init__(self, reason: str = "Unknown error") -> None:
+        super().__init__(f"Failed to extract audio: {reason}")
+
+
+class QueueEmpty(PlaybackError):
+    """Queue is empty."""
+
+    def __init__(self) -> None:
+        super().__init__("The queue is empty.")
+
+
+class QueueFull(PlaybackError):
+    """Queue has reached its maximum size."""
+
+    def __init__(self, max_size: int) -> None:
+        super().__init__(f"The queue is full (max {max_size} tracks).")
+
+
+class InvalidSeekPosition(PlaybackError):
+    """Invalid seek position."""
+
+    def __init__(self) -> None:
+        super().__init__("Invalid seek position. Use format like `1:30` or `90`.")
+
+
+class NothingPlaying(PlaybackError):
+    """Nothing is currently playing."""
+
+    def __init__(self) -> None:
+        super().__init__("Nothing is currently playing.")
+
+
+# --- Permission Errors ---
+
+
+class PermissionError(MusicBotError):
+    """Base exception for permission-related errors."""
+
+
+class DJRequired(PermissionError):
+    """User needs DJ permissions."""
+
+    def __init__(self) -> None:
+        super().__init__("You need the DJ role to use this command.")
+
+
+class AdminRequired(PermissionError):
+    """User needs admin permissions."""
+
+    def __init__(self) -> None:
+        super().__init__("You need administrator permissions to use this command.")
+
+
+# --- Playlist Errors ---
+
+
+class PlaylistError(MusicBotError):
+    """Base exception for playlist-related errors."""
+
+
+class PlaylistNotFound(PlaylistError):
+    """Playlist does not exist."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Playlist not found: {name}")
+
+
+class PlaylistAlreadyExists(PlaylistError):
+    """Playlist with this name already exists."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"A playlist named '{name}' already exists.")
+
+
+class NotPlaylistOwner(PlaylistError):
+    """User is not the owner of the playlist."""
+
+    def __init__(self) -> None:
+        super().__init__("You don't own this playlist.")
+
+
+# --- FX Errors ---
+
+
+class FXError(MusicBotError):
+    """Base exception for audio effects errors."""
+
+
+class PresetNotFound(FXError):
+    """FX preset does not exist."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"FX preset not found: {name}")
+
+
+class InvalidFilterString(FXError):
+    """Invalid FFmpeg filter string."""
+
+    def __init__(self) -> None:
+        super().__init__("Invalid FFmpeg filter string.")
+
+
+# --- Queue Lock ---
+
+
+class QueueLocked(MusicBotError):
+    """Queue is locked to DJ-only additions."""
+
+    def __init__(self) -> None:
+        super().__init__("The queue is currently locked. Only DJs can add tracks.")

@@ -1,0 +1,33 @@
+# Discord
+discord.py[voice]>=2.4.0
+PyNaCl>=1.5
+
+# Audio
+yt-dlp>=2024.0
+wavelink>=3.4.0
+
+# Database
+SQLAlchemy[asyncio]>=2.0
+aiosqlite>=0.19
+alembic>=1.12
+
+# Configuration
+pydantic-settings>=2.0
+python-dotenv>=1.0
+
+# HTTP
+aiohttp>=3.9
+
+# Spotify (optional - for playlist import)
+spotipy>=2.23
+
+# Lyrics
+syncedlyrics>=0.7
+
+# Utilities
+cachetools>=5.3
+rapidfuzz>=3.0
+loguru>=0.7
+
+# Optional: PostgreSQL support
+# asyncpg>=0.29
