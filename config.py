@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +12,7 @@ class BotConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        case_sensitive=False,
         extra="ignore",
     )
 
@@ -52,3 +54,26 @@ class BotConfig(BaseSettings):
 
     # --- Auto-Update ---
     ytdlp_auto_update: bool = True
+
+    @field_validator("bot_owner_id", "feedback_channel_id", mode="before")
+    @classmethod
+    def empty_string_to_none(cls, value: object) -> object:
+        """Allow blank optional numeric values in .env files."""
+        if value == "":
+            return None
+        return value
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        """Convert common sync Postgres URLs to asyncpg URLs for Async SQLAlchemy."""
+        if not isinstance(value, str):
+            return value
+
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+asyncpg://", 1)
+
+        return value
