@@ -74,3 +74,36 @@ async def get_user_tier(
 def check_tier(user_tier: Tier, required_tier: Tier) -> bool:
     """Check if a user's tier meets or exceeds the required tier."""
     return user_tier >= required_tier
+
+
+async def check_command_permission(ctx: Context, command_name: str) -> bool | None:
+    """Check per-role command permission overrides.
+
+    Returns:
+        True if explicitly allowed, False if explicitly denied, None if no overrides match.
+    """
+    if not ctx.guild or not isinstance(ctx.author, discord.Member):
+        return None
+
+    from core.repositories import PermissionRepo
+
+    overrides = await PermissionRepo.get_for_command(ctx.guild.id, command_name)
+    if not overrides:
+        return None
+
+    member_role_ids = {role.id for role in ctx.author.roles}
+    has_allow = False
+    has_deny = False
+
+    for override in overrides:
+        if override.role_id in member_role_ids:
+            if override.allowed:
+                has_allow = True
+            else:
+                has_deny = True
+
+    if has_allow:
+        return True
+    if has_deny:
+        return False
+    return None

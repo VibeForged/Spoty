@@ -20,6 +20,7 @@ from core.models import (
     FXPreset,
     GuildSettings,
     History,
+    Permission,
     Playlist,
     PlaylistTrack,
     PlaylistVote,
@@ -208,6 +209,160 @@ class PlaylistTrackRepo:
             )
             return result.scalar_one()
 
+    @staticmethod
+    async def bulk_add_tracks(
+        playlist_id: int, tracks: list[dict], added_by: int
+    ) -> list[PlaylistTrack]:
+        """Add multiple tracks in a single transaction.
+
+        Each dict should have keys: title, url, duration.
+        Auto-increments position from the last existing position.
+        """
+        async with get_session() as session:
+            result = await session.execute(
+                select(PlaylistTrack.position)
+                .where(PlaylistTrack.playlist_id == playlist_id)
+                .order_by(PlaylistTrack.position.desc())
+                .limit(1)
+            )
+            last_pos = result.scalar_one_or_none() or 0
+
+            new_tracks = []
+            for i, t in enumerate(tracks, start=1):
+                track = PlaylistTrack(
+                    playlist_id=playlist_id,
+                    position=last_pos + i,
+                    title=t["title"],
+                    url=t["url"],
+                    duration=t.get("duration"),
+                    added_by=added_by,
+                )
+                session.add(track)
+                new_tracks.append(track)
+            await session.flush()
+            return new_tracks
+
+    @staticmethod
+    async def get_track_at_position(
+        playlist_id: int, position: int
+    ) -> PlaylistTrack | None:
+        """Returns a single PlaylistTrack at the given position, or None."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(PlaylistTrack).where(
+                    PlaylistTrack.playlist_id == playlist_id,
+                    PlaylistTrack.position == position,
+                )
+            )
+            return result.scalar_one_or_none()
+
+    @staticmethod
+    async def reorder_tracks(playlist_id: int, track_ids: list[int]) -> None:
+        """Reorder tracks by setting positions according to the given ID order.
+
+        Two-pass update to avoid unique constraint violations on
+        (playlist_id, position).
+        """
+        async with get_session() as session:
+            # Pass 1: set positions to negative offsets
+            for i, track_id in enumerate(track_ids):
+                await session.execute(
+                    update(PlaylistTrack)
+                    .where(
+                        PlaylistTrack.id == track_id,
+                        PlaylistTrack.playlist_id == playlist_id,
+                    )
+                    .values(position=-(i + 1))
+                )
+            await session.flush()
+
+            # Pass 2: set final positive positions
+            for i, track_id in enumerate(track_ids):
+                await session.execute(
+                    update(PlaylistTrack)
+                    .where(
+                        PlaylistTrack.id == track_id,
+                        PlaylistTrack.playlist_id == playlist_id,
+                    )
+                    .values(position=i + 1)
+                )
+            await session.flush()
+
+
+class PlaylistVoteRepo:
+    """Repository for playlist track votes."""
+
+    @staticmethod
+    async def upsert_vote(playlist_track_id: int, user_id: int, vote: int) -> None:
+        """Upsert a vote (+1 or -1) for a track by a user.
+
+        Updates likes/dislikes counts on the PlaylistTrack accordingly.
+        """
+        async with get_session() as session:
+            # Check for existing vote
+            result = await session.execute(
+                select(PlaylistVote).where(
+                    PlaylistVote.playlist_track_id == playlist_track_id,
+                    PlaylistVote.user_id == user_id,
+                )
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                old_vote = existing.vote
+                if old_vote == vote:
+                    return  # No change needed
+                # Reverse old vote counts
+                if old_vote == 1:
+                    await session.execute(
+                        update(PlaylistTrack)
+                        .where(PlaylistTrack.id == playlist_track_id)
+                        .values(likes=PlaylistTrack.likes - 1)
+                    )
+                elif old_vote == -1:
+                    await session.execute(
+                        update(PlaylistTrack)
+                        .where(PlaylistTrack.id == playlist_track_id)
+                        .values(dislikes=PlaylistTrack.dislikes - 1)
+                    )
+                existing.vote = vote
+            else:
+                new_vote = PlaylistVote(
+                    playlist_track_id=playlist_track_id,
+                    user_id=user_id,
+                    vote=vote,
+                )
+                session.add(new_vote)
+
+            # Apply new vote counts
+            if vote == 1:
+                await session.execute(
+                    update(PlaylistTrack)
+                    .where(PlaylistTrack.id == playlist_track_id)
+                    .values(likes=PlaylistTrack.likes + 1)
+                )
+            elif vote == -1:
+                await session.execute(
+                    update(PlaylistTrack)
+                    .where(PlaylistTrack.id == playlist_track_id)
+                    .values(dislikes=PlaylistTrack.dislikes + 1)
+                )
+            await session.flush()
+
+    @staticmethod
+    async def get_votes(playlist_track_id: int) -> tuple[int, int]:
+        """Returns (likes, dislikes) counts for a track."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(PlaylistTrack.likes, PlaylistTrack.dislikes).where(
+                    PlaylistTrack.id == playlist_track_id
+                )
+            )
+            row = result.one_or_none()
+            if row is None:
+                return (0, 0)
+            return (row[0], row[1])
+
 
 class HistoryRepo:
     """Repository for play history."""
@@ -377,3 +532,90 @@ class StatsRepo:
                 select(Stats).where(Stats.guild_id == guild_id)
             )
             return result.scalar_one_or_none()
+
+
+class PermissionRepo:
+    """Repository for per-guild command permission overrides."""
+
+    @staticmethod
+    async def get_overrides(guild_id: int) -> list[Permission]:
+        """Get all permission overrides for a guild."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(Permission)
+                .where(Permission.guild_id == guild_id)
+                .order_by(Permission.command_name)
+            )
+            return list(result.scalars().all())
+
+    @staticmethod
+    async def get_for_command(guild_id: int, command_name: str) -> list[Permission]:
+        """Get all permission overrides for a specific command in a guild."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(Permission).where(
+                    Permission.guild_id == guild_id,
+                    Permission.command_name == command_name,
+                )
+            )
+            return list(result.scalars().all())
+
+    @staticmethod
+    async def set_override(
+        guild_id: int, command_name: str, role_id: int, allowed: bool
+    ) -> None:
+        """Upsert a permission override for a command and role."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(Permission).where(
+                    Permission.guild_id == guild_id,
+                    Permission.command_name == command_name,
+                    Permission.role_id == role_id,
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                existing.allowed = allowed
+            else:
+                session.add(
+                    Permission(
+                        guild_id=guild_id,
+                        command_name=command_name,
+                        role_id=role_id,
+                        allowed=allowed,
+                    )
+                )
+
+    @staticmethod
+    async def remove_override(guild_id: int, command_name: str, role_id: int) -> bool:
+        """Remove a specific permission override. Returns True if deleted."""
+        async with get_session() as session:
+            result = await session.execute(
+                delete(Permission).where(
+                    Permission.guild_id == guild_id,
+                    Permission.command_name == command_name,
+                    Permission.role_id == role_id,
+                )
+            )
+            return result.rowcount > 0
+
+    @staticmethod
+    async def reset_command(guild_id: int, command_name: str) -> int:
+        """Delete all overrides for a command. Returns count deleted."""
+        async with get_session() as session:
+            result = await session.execute(
+                delete(Permission).where(
+                    Permission.guild_id == guild_id,
+                    Permission.command_name == command_name,
+                )
+            )
+            return result.rowcount
+
+    @staticmethod
+    async def reset_all(guild_id: int) -> int:
+        """Delete all permission overrides for a guild. Returns count deleted."""
+        async with get_session() as session:
+            result = await session.execute(
+                delete(Permission).where(Permission.guild_id == guild_id)
+            )
+            return result.rowcount

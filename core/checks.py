@@ -15,7 +15,7 @@ from core.errors import (
     DJRequired,
     NotInVoiceChannel,
 )
-from core.permissions import Tier, check_tier, get_user_tier
+from core.permissions import Tier, check_command_permission, check_tier, get_user_tier
 
 if TYPE_CHECKING:
     pass
@@ -64,6 +64,13 @@ def is_dj() -> Callable:
     """Check that the user has DJ-tier permissions."""
 
     async def predicate(ctx: commands.Context) -> bool:
+        # Check per-role permission overrides first
+        override = await check_command_permission(ctx, ctx.command.qualified_name)
+        if override is True:
+            return True
+        if override is False:
+            raise DJRequired()
+
         # Get DJ role from guild settings
         dj_role_id = None
         if hasattr(ctx.bot, "get_guild_settings"):
@@ -83,6 +90,13 @@ def is_admin() -> Callable:
     """Check that the user has Admin-tier permissions."""
 
     async def predicate(ctx: commands.Context) -> bool:
+        # Check per-role permission overrides first
+        override = await check_command_permission(ctx, ctx.command.qualified_name)
+        if override is True:
+            return True
+        if override is False:
+            raise AdminRequired()
+
         tier = await get_user_tier(ctx)
         if not check_tier(tier, Tier.ADMIN):
             raise AdminRequired()
