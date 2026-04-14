@@ -63,11 +63,19 @@ class QueuePaginator(discord.ui.View):
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, emoji="\u25c0")
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.player._destroyed:
+            await interaction.response.send_message("Player is no longer active.", ephemeral=True)
+            self.stop()
+            return
         self.page = max(1, self.page - 1)
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, emoji="\u25b6")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.player._destroyed:
+            await interaction.response.send_message("Player is no longer active.", ephemeral=True)
+            self.stop()
+            return
         _, total_pages = self.player.queue.get_page(self.page)
         self.page = min(total_pages, self.page + 1)
         await interaction.response.edit_message(embed=self.build_embed(), view=self)

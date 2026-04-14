@@ -47,6 +47,10 @@ class Music(commands.Cog):
         if player and player.voice_client and player.voice_client.is_connected():
             return player
 
+        # Stale player — destroy before creating new one
+        if player:
+            await player.destroy()
+
         # User must be in a voice channel
         if not isinstance(ctx.author, discord.Member) or not ctx.author.voice:
             from core.errors import NotInVoiceChannel

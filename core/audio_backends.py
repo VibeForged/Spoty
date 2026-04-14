@@ -84,6 +84,9 @@ class BaseAudioBackend(ABC):
     @abstractmethod
     async def wait_for_track_end(self) -> Exception | None: ...
 
+    def cancel_waiters(self) -> None:
+        """Cancel any pending wait futures. Override in subclasses."""
+
 
 class FFmpegBackend(BaseAudioBackend):
     """Native FFmpeg audio backend using discord.py voice client."""
@@ -205,11 +208,19 @@ class FFmpegBackend(BaseAudioBackend):
         if self._vc.is_playing() or self._vc.is_paused():
             self._vc.stop()
         self._playing = False
+        try:
+            await self._vc.disconnect(force=True)
+        except Exception:
+            pass
 
     async def wait_for_track_end(self) -> Exception | None:
         if self._after_callback is None:
             return None
         return await self._after_callback
+
+    def cancel_waiters(self) -> None:
+        if self._after_callback and not self._after_callback.done():
+            self._after_callback.cancel()
 
 
 class LavalinkBackend(BaseAudioBackend):
@@ -305,3 +316,7 @@ class LavalinkBackend(BaseAudioBackend):
         """Resolve the current wait future from Wavelink event listeners."""
         if self._after_callback and not self._after_callback.done():
             self._after_callback.set_result(error)
+
+    def cancel_waiters(self) -> None:
+        if self._after_callback and not self._after_callback.done():
+            self._after_callback.cancel()

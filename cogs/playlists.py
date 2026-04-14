@@ -170,6 +170,7 @@ class Playlists(commands.Cog):
     @cooldown(1, 5.0)
     async def playlist_play(self, ctx: commands.Context, name: str, shuffle: bool = False) -> None:
         """Load all tracks from a playlist into the queue."""
+        await ctx.defer()
         from core.repositories import PlaylistRepo, PlaylistTrackRepo
         from core.track import Track
 

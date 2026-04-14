@@ -167,21 +167,28 @@ class MusicBot(commands.Bot):
             # Bot was disconnected
             if before.channel and not after.channel:
                 player = self.players.get(member.guild.id)
-                if player and not getattr(player, "_backend_switch_in_progress", False):
+                if (
+                    player
+                    and not getattr(player, "_backend_switch_in_progress", False)
+                    and self.players.get(member.guild.id) is player
+                ):
                     await player.destroy()
             return
 
         # Check if bot is alone in voice channel
         player = self.players.get(member.guild.id)
         if player and player.voice_client and player.voice_client.channel:
-            channel = player.voice_client.channel
-            non_bot_members = [m for m in channel.members if not m.bot]
-            if not non_bot_members:
-                # Bot is alone — start inactivity timer
-                player._start_inactive_timer()
-            else:
-                # Someone joined back — cancel timer
-                player._cancel_inactive_timer()
+            try:
+                channel = player.voice_client.channel
+                non_bot_members = [m for m in channel.members if not m.bot]
+                if not non_bot_members:
+                    # Bot is alone — start inactivity timer
+                    player._start_inactive_timer()
+                else:
+                    # Someone joined back — cancel timer
+                    player._cancel_inactive_timer()
+            except Exception:
+                logger.debug("Error checking voice channel members", exc_info=True)
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         """Global error handler for prefix commands."""
@@ -300,6 +307,10 @@ class MusicBot(commands.Bot):
                 await player.destroy()
 
         await self.backend_manager.shutdown()
+
+        # Shutdown extractor thread pool
+        from core.extractor import shutdown_pool
+        shutdown_pool()
 
         # Close database
         await close_db()

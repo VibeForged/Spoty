@@ -37,6 +37,7 @@ class MusicPlayer:
         self._play_task: asyncio.Task | None = None
         self._fallback_announced = False
         self._backend_switch_in_progress = False
+        self._consecutive_failures = 0
         self._backend._volume = self.volume
         logger.info("MusicPlayer created for guild {} using {}", guild_id, self.backend_name)
 
@@ -105,6 +106,7 @@ class MusicPlayer:
 
             try:
                 await self._backend.play(next_track)
+                self._consecutive_failures = 0
                 await self._record_track_play(next_track)
             except BackendUnavailable as exc:
                 if await self._try_fallback(exc, next_track):
@@ -191,6 +193,9 @@ class MusicPlayer:
             self._backend.notify_track_end(error)
 
     async def _run_backend_action(self, method_name: str, *args) -> None:
+        if self._backend_switch_in_progress:
+            logger.warning("Backend switch in progress, skipping {}", method_name)
+            return
         try:
             await getattr(self._backend, method_name)(*args)
         except BackendUnavailable as exc:
@@ -214,6 +219,14 @@ class MusicPlayer:
         old_backend = self._backend
         self._backend_switch_in_progress = True
         try:
+            # Cancel active play task FIRST
+            if self._play_task:
+                self._play_task.cancel()
+                self._play_task = None
+
+            # Resolve orphaned futures
+            old_backend.cancel_waiters()
+
             try:
                 await old_backend.cleanup()
             except Exception:
@@ -232,8 +245,6 @@ class MusicPlayer:
             await self._backend.play(self.current, seek=(resume_position_ms or 0) / 1000.0)
             if record_current:
                 await self._record_track_play(self.current)
-            if self._play_task:
-                self._play_task.cancel()
             self._play_task = asyncio.create_task(self._wait_and_play_next())
 
         if self.text_channel and not self._fallback_announced:
@@ -277,7 +288,24 @@ class MusicPlayer:
                 await self._send_now_playing()
 
     async def _handle_track_failure(self, track: Track, error: Exception) -> None:
-        logger.error("Failed to play track in guild {}: {}", self.guild_id, error)
+        self._consecutive_failures += 1
+        logger.error(
+            "Failed to play track in guild {}: {} (consecutive: {})",
+            self.guild_id, error, self._consecutive_failures,
+        )
+        if self._consecutive_failures >= 3:
+            logger.error("Too many consecutive failures in guild {}, stopping", self.guild_id)
+            self.current = None
+            if self.text_channel:
+                await self.text_channel.send(
+                    embed=discord.Embed(
+                        title="Playback Error",
+                        description="Too many consecutive playback failures. Stopping.",
+                        color=discord.Color.red(),
+                    )
+                )
+            self._start_inactive_timer()
+            return
         if self.text_channel:
             await self.text_channel.send(
                 embed=discord.Embed(
@@ -360,18 +388,23 @@ class MusicPlayer:
                 await self.destroy()
         except asyncio.CancelledError:
             pass
+        except Exception:
+            logger.debug("Error in inactive disconnect", exc_info=True)
 
     async def destroy(self) -> None:
         if self._destroyed:
             return
         self._destroyed = True
+        self.bot.players.pop(self.guild_id, None)  # Free slot immediately to prevent duplicates
 
         self._cancel_inactive_timer()
         if self._play_task:
             self._play_task.cancel()
 
-        await self._backend.cleanup()
-        self.bot.players.pop(self.guild_id, None)
+        try:
+            await self._backend.cleanup()
+        except Exception:
+            logger.debug("Ignored cleanup error during destroy", exc_info=True)
         logger.info("MusicPlayer destroyed for guild {}", self.guild_id)
 
 
