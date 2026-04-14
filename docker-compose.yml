@@ -1,0 +1,31 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    volumes:
+      - bot-data:/app/data
+      - bot-logs:/app/logs
+    depends_on:
+      lavalink:
+        condition: service_healthy
+    restart: unless-stopped
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    environment:
+      - SERVER_PORT=8080
+      - LAVALINK_SERVER_PASSWORD=youshallnotpass
+    volumes:
+      - ./lavalink:/opt/lavalink/config
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  bot-data:
+  bot-logs:

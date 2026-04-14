@@ -213,7 +213,7 @@ class FX(commands.Cog):
         """Launch the interactive FX preset builder UI."""
         from core.ui.fx_builder import FXBuilderView
 
-        view = FXBuilderView(ctx.guild.id, ctx.author.id)
+        view = FXBuilderView(ctx.guild.id, ctx.author.id, bot=self.bot)
         await ctx.send(
             embed=discord.Embed(
                 title="FX Preset Builder",

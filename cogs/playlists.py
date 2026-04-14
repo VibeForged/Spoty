@@ -5,7 +5,9 @@ Phase 1 stub. Full implementation in Phase 3.
 
 from __future__ import annotations
 
+import asyncio
 import random
+import re
 import string
 from typing import TYPE_CHECKING
 
@@ -295,20 +297,117 @@ class Playlists(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @playlist.command(name="import", description="Import a playlist from YouTube/Spotify URL or share code")
+    async def _import_spotify(self, url: str) -> tuple[str, list[dict]]:
+        """Import tracks from a Spotify playlist or album URL.
+
+        Returns (name, tracks) where tracks is a list of dicts with
+        title, url, and duration keys.
+        """
+        import spotipy
+
+        sp = spotipy.Spotify(
+            auth_manager=spotipy.SpotifyClientCredentials(
+                client_id=self.bot.config.spotipy_client_id,
+                client_secret=self.bot.config.spotipy_client_secret,
+            )
+        )
+
+        loop = asyncio.get_running_loop()
+
+        # Parse playlist or album ID from URL
+        playlist_match = re.search(r"playlist/([a-zA-Z0-9]+)", url)
+        album_match = re.search(r"album/([a-zA-Z0-9]+)", url)
+
+        tracks: list[dict] = []
+
+        if playlist_match:
+            sp_id = playlist_match.group(1)
+            sp_playlist = await loop.run_in_executor(None, sp.playlist, sp_id)
+            name = sp_playlist["name"]
+
+            results = sp_playlist["tracks"]
+            while True:
+                for item in results["items"]:
+                    t = item.get("track")
+                    if not t:
+                        continue
+                    artists = ", ".join(a["name"] for a in t["artists"])
+                    title = f"{artists} - {t['name']}"
+                    tracks.append(
+                        {
+                            "title": title,
+                            "url": f"ytsearch:{artists} - {t['name']}",
+                            "duration": t["duration_ms"] // 1000,
+                        }
+                    )
+                if results["next"]:
+                    results = await loop.run_in_executor(None, sp.next, results)
+                else:
+                    break
+
+        elif album_match:
+            sp_id = album_match.group(1)
+            sp_album = await loop.run_in_executor(None, sp.album, sp_id)
+            name = sp_album["name"]
+
+            results = sp_album["tracks"]
+            while True:
+                for t in results["items"]:
+                    artists = ", ".join(a["name"] for a in t["artists"])
+                    title = f"{artists} - {t['name']}"
+                    tracks.append(
+                        {
+                            "title": title,
+                            "url": f"ytsearch:{artists} - {t['name']}",
+                            "duration": t["duration_ms"] // 1000,
+                        }
+                    )
+                if results["next"]:
+                    results = await loop.run_in_executor(None, sp.next, results)
+                else:
+                    break
+        else:
+            raise ValueError("Could not parse Spotify playlist or album URL.")
+
+        return name, tracks
+
+    @playlist.command(
+        name="import", description="Import a playlist from YouTube/Spotify URL or share code"
+    )
     @app_commands.describe(source="YouTube/Spotify URL or share code")
     @cooldown(1, 15.0)
     async def playlist_import(self, ctx: commands.Context, *, source: str) -> None:
-        """Import a playlist from a URL or share code. Full implementation in Phase 3."""
+        """Import a playlist from a URL or share code."""
+        from core.repositories import PlaylistRepo, PlaylistTrackRepo
+
         await ctx.defer()
 
         # Check if it's a share code (8 chars alphanumeric)
         if len(source) == 8 and source.isalnum():
-            from core.repositories import PlaylistRepo
-
             shared = await PlaylistRepo.get_by_share_code(source)
             if shared:
-                await ctx.send(f"Found shared playlist **{shared.name}**. Import coming in Phase 3!")
+                new_name = f"{shared.name} (imported)"
+                new_playlist = await PlaylistRepo.create(
+                    ctx.guild.id, ctx.author.id, new_name
+                )
+                shared_tracks = await PlaylistTrackRepo.get_tracks(shared.id)
+                track_dicts = [
+                    {"title": t.title, "url": t.url, "duration": t.duration}
+                    for t in shared_tracks
+                ]
+                await PlaylistTrackRepo.bulk_add_tracks(
+                    new_playlist.id, track_dicts, ctx.author.id
+                )
+                await ctx.send(
+                    embed=discord.Embed(
+                        title="Playlist Imported",
+                        description=(
+                            f"Imported **{len(track_dicts)}** tracks from "
+                            f"**{shared.name}** as **{new_name}**"
+                        ),
+                        color=discord.Color.green(),
+                    )
+                )
                 return
 
         # Check for Spotify URL
@@ -320,7 +419,27 @@ class Playlists(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            await ctx.send("Spotify import coming in Phase 3!")
+
+            name, track_dicts = await self._import_spotify(source)
+            if not track_dicts:
+                await ctx.send("No tracks found in that Spotify URL.", ephemeral=True)
+                return
+
+            new_playlist = await PlaylistRepo.create(
+                ctx.guild.id, ctx.author.id, name
+            )
+            await PlaylistTrackRepo.bulk_add_tracks(
+                new_playlist.id, track_dicts, ctx.author.id
+            )
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Spotify Playlist Imported",
+                    description=(
+                        f"Imported **{len(track_dicts)}** tracks from **{name}**"
+                    ),
+                    color=discord.Color.green(),
+                )
+            )
             return
 
         # YouTube playlist import
@@ -331,11 +450,24 @@ class Playlists(commands.Cog):
             await ctx.send("No tracks found in that playlist.", ephemeral=True)
             return
 
+        pl_name = tracks[0].title if len(tracks) == 1 else "Imported Playlist"
+
+        new_playlist = await PlaylistRepo.create(
+            ctx.guild.id, ctx.author.id, pl_name
+        )
+        track_dicts = [
+            {"title": t.title, "url": t.url, "duration": t.duration} for t in tracks
+        ]
+        await PlaylistTrackRepo.bulk_add_tracks(
+            new_playlist.id, track_dicts, ctx.author.id
+        )
         await ctx.send(
             embed=discord.Embed(
-                title="Playlist Import",
-                description=f"Found **{len(tracks)}** tracks. Full import coming in Phase 3!",
-                color=discord.Color.blue(),
+                title="Playlist Imported",
+                description=(
+                    f"Imported **{len(track_dicts)}** tracks as **{pl_name}**"
+                ),
+                color=discord.Color.green(),
             )
         )
 
@@ -343,29 +475,128 @@ class Playlists(commands.Cog):
     @app_commands.describe(name="Playlist name", position="Track position")
     @cooldown(1, 3.0)
     async def playlist_like(self, ctx: commands.Context, name: str, position: int) -> None:
-        """Upvote a track. Full implementation in Phase 3."""
-        await ctx.send("Voting coming in Phase 3!", ephemeral=True)
+        """Upvote a track in a playlist."""
+        from core.repositories import PlaylistRepo, PlaylistTrackRepo, PlaylistVoteRepo
+
+        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
+        if not playlist:
+            raise PlaylistNotFound(name)
+
+        track = await PlaylistTrackRepo.get_track_at_position(playlist.id, position)
+        if not track:
+            await ctx.send(f"No track at position {position}.", ephemeral=True)
+            return
+
+        await PlaylistVoteRepo.upsert_vote(track.id, ctx.author.id, 1)
+        likes, dislikes = await PlaylistVoteRepo.get_votes(track.id)
+
+        await ctx.send(
+            embed=discord.Embed(
+                title="Track Liked",
+                description=(
+                    f"**{track.title}**\n"
+                    f"Likes: {likes} | Dislikes: {dislikes}"
+                ),
+                color=discord.Color.green(),
+            )
+        )
 
     @playlist.command(name="dislike", description="Downvote a track in a playlist")
     @app_commands.describe(name="Playlist name", position="Track position")
     @cooldown(1, 3.0)
     async def playlist_dislike(self, ctx: commands.Context, name: str, position: int) -> None:
-        """Downvote a track. Full implementation in Phase 3."""
-        await ctx.send("Voting coming in Phase 3!", ephemeral=True)
+        """Downvote a track in a playlist."""
+        from core.repositories import PlaylistRepo, PlaylistTrackRepo, PlaylistVoteRepo
+
+        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
+        if not playlist:
+            raise PlaylistNotFound(name)
+
+        track = await PlaylistTrackRepo.get_track_at_position(playlist.id, position)
+        if not track:
+            await ctx.send(f"No track at position {position}.", ephemeral=True)
+            return
+
+        await PlaylistVoteRepo.upsert_vote(track.id, ctx.author.id, -1)
+        likes, dislikes = await PlaylistVoteRepo.get_votes(track.id)
+
+        await ctx.send(
+            embed=discord.Embed(
+                title="Track Disliked",
+                description=(
+                    f"**{track.title}**\n"
+                    f"Likes: {likes} | Dislikes: {dislikes}"
+                ),
+                color=discord.Color.red(),
+            )
+        )
 
     @playlist.command(name="copy", description="Copy a playlist")
-    @app_commands.describe(source="Source playlist name", new_name="New playlist name")
+    @app_commands.describe(source="Source playlist name or share code", new_name="New playlist name")
     @cooldown(1, 5.0)
     async def playlist_copy(self, ctx: commands.Context, source: str, new_name: str) -> None:
-        """Copy a playlist. Full implementation in Phase 3."""
-        await ctx.send("Playlist copy coming in Phase 3!", ephemeral=True)
+        """Copy a playlist (own or shared) to a new name."""
+        from core.repositories import PlaylistRepo, PlaylistTrackRepo
+
+        # Try own playlist first
+        src_playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, source)
+        if not src_playlist:
+            # Try share code
+            src_playlist = await PlaylistRepo.get_by_share_code(source)
+        if not src_playlist:
+            raise PlaylistNotFound(source)
+
+        # Check new_name doesn't exist
+        existing = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, new_name)
+        if existing:
+            raise PlaylistAlreadyExists(new_name)
+
+        new_playlist = await PlaylistRepo.create(ctx.guild.id, ctx.author.id, new_name)
+        src_tracks = await PlaylistTrackRepo.get_tracks(src_playlist.id)
+        track_dicts = [
+            {"title": t.title, "url": t.url, "duration": t.duration}
+            for t in src_tracks
+        ]
+        await PlaylistTrackRepo.bulk_add_tracks(
+            new_playlist.id, track_dicts, ctx.author.id
+        )
+        await ctx.send(
+            embed=discord.Embed(
+                title="Playlist Copied",
+                description=(
+                    f"Copied **{len(track_dicts)}** tracks to **{new_name}**"
+                ),
+                color=discord.Color.green(),
+            )
+        )
 
     @playlist.command(name="shuffle", description="Permanently shuffle playlist track order")
     @app_commands.describe(name="Playlist name")
     @cooldown(1, 5.0)
     async def playlist_shuffle(self, ctx: commands.Context, *, name: str) -> None:
         """Permanently shuffle the stored order of a playlist."""
-        await ctx.send("Playlist shuffle coming in Phase 3!", ephemeral=True)
+        from core.repositories import PlaylistRepo, PlaylistTrackRepo
+
+        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
+        if not playlist:
+            raise PlaylistNotFound(name)
+
+        tracks = await PlaylistTrackRepo.get_tracks(playlist.id)
+        if not tracks:
+            await ctx.send(f"Playlist **{name}** is empty.", ephemeral=True)
+            return
+
+        track_ids = [t.id for t in tracks]
+        random.shuffle(track_ids)
+        await PlaylistTrackRepo.reorder_tracks(playlist.id, track_ids)
+
+        await ctx.send(
+            embed=discord.Embed(
+                title="Playlist Shuffled",
+                description=f"Shuffled **{len(tracks)}** tracks in **{name}**",
+                color=discord.Color.green(),
+            )
+        )
 
 
 async def setup(bot: MusicBot) -> None:

@@ -176,12 +176,106 @@ class Settings(commands.Cog):
         self.bot.invalidate_settings_cache(ctx.guild.id)
         await ctx.send(f"Queue **{'locked' if new_value else 'unlocked'}**")
 
-    @commands.hybrid_command(name="permissions", aliases=["perms"], description="Manage command permissions")
+    @commands.hybrid_group(
+        name="permissions", aliases=["perms"], description="Manage command permissions"
+    )
     @is_admin()
-    @cooldown(1, 5.0)
     async def permissions(self, ctx: commands.Context) -> None:
-        """Manage per-role command permissions. Full implementation in Phase 5."""
-        await ctx.send("Permission management coming in Phase 5!", ephemeral=True)
+        """Manage per-role command permissions."""
+        if ctx.invoked_subcommand is None:
+            await self.permissions_view(ctx)
+
+    @permissions.command(name="view", description="View all permission overrides")
+    @cooldown(1, 5.0)
+    async def permissions_view(self, ctx: commands.Context) -> None:
+        """List all permission overrides for this server."""
+        from core.repositories import PermissionRepo
+
+        overrides = await PermissionRepo.get_overrides(ctx.guild.id)
+        if not overrides:
+            await ctx.send("No permission overrides configured.", ephemeral=True)
+            return
+
+        # Group by command name
+        grouped: dict[str, list] = {}
+        for override in overrides:
+            grouped.setdefault(override.command_name, []).append(override)
+
+        embed = discord.Embed(title="Permission Overrides", color=discord.Color.blue())
+        for cmd_name, cmd_overrides in sorted(grouped.items()):
+            lines = []
+            for o in cmd_overrides:
+                action = "Allow" if o.allowed else "Deny"
+                lines.append(f"<@&{o.role_id}> — {action}")
+            embed.add_field(name=f"/{cmd_name}", value="\n".join(lines), inline=False)
+
+        await ctx.send(embed=embed)
+
+    @permissions.command(name="set", description="Set a permission override for a command")
+    @app_commands.describe(
+        command="Command name", role="Role to set permission for", action="allow or deny"
+    )
+    @cooldown(1, 5.0)
+    async def permissions_set(
+        self, ctx: commands.Context, command: str, role: discord.Role, action: str
+    ) -> None:
+        """Set a permission override for a command and role."""
+        # Validate command exists
+        bot_command = self.bot.get_command(command)
+        if bot_command is None:
+            await ctx.send(f"Unknown command: `{command}`", ephemeral=True)
+            return
+
+        action_lower = action.lower()
+        if action_lower not in ("allow", "deny"):
+            await ctx.send("Action must be `allow` or `deny`.", ephemeral=True)
+            return
+
+        allowed = action_lower == "allow"
+        from core.repositories import PermissionRepo
+
+        await PermissionRepo.set_override(
+            ctx.guild.id, bot_command.qualified_name, role.id, allowed
+        )
+        action_word = "allowed" if allowed else "denied"
+        await ctx.send(
+            f"**{bot_command.qualified_name}** is now **{action_word}** for {role.mention}."
+        )
+
+    @permissions.command(name="remove", description="Remove a permission override")
+    @app_commands.describe(command="Command name", role="Role to remove override for")
+    @cooldown(1, 5.0)
+    async def permissions_remove(
+        self, ctx: commands.Context, command: str, role: discord.Role
+    ) -> None:
+        """Remove a specific permission override."""
+        from core.repositories import PermissionRepo
+
+        removed = await PermissionRepo.remove_override(ctx.guild.id, command, role.id)
+        if removed:
+            await ctx.send(
+                f"Removed permission override for **{command}** on {role.mention}."
+            )
+        else:
+            await ctx.send(
+                f"No override found for **{command}** on {role.mention}.", ephemeral=True
+            )
+
+    @permissions.command(name="reset", description="Reset permission overrides")
+    @app_commands.describe(command="Command to reset (leave empty to reset all)")
+    @cooldown(1, 5.0)
+    async def permissions_reset(
+        self, ctx: commands.Context, command: str | None = None
+    ) -> None:
+        """Reset permission overrides for a command or all commands."""
+        from core.repositories import PermissionRepo
+
+        if command:
+            count = await PermissionRepo.reset_command(ctx.guild.id, command)
+            await ctx.send(f"Removed **{count}** override(s) for **{command}**.")
+        else:
+            count = await PermissionRepo.reset_all(ctx.guild.id)
+            await ctx.send(f"Removed **{count}** permission override(s) for this server.")
 
 
 async def setup(bot: MusicBot) -> None:

@@ -1,7 +1,4 @@
-"""Utility cog — help, ping, lyrics, history, stats, feedback, quiz, ambience.
-
-Phase 1 stub. Full implementation in Phase 6.
-"""
+"""Utility cog — help, ping, lyrics, history, stats, feedback, quiz, ambience."""
 
 from __future__ import annotations
 
@@ -17,6 +14,20 @@ from core.checks import cooldown
 
 if TYPE_CHECKING:
     from bot import MusicBot
+    from core.quiz import MusicQuiz
+
+AMBIENCE_QUERIES: dict[str, str] = {
+    "rain": "rain sounds relaxing 10 hours",
+    "ocean": "ocean waves sounds relaxing",
+    "forest": "forest nature sounds ambient",
+    "cafe": "coffee shop ambience background noise",
+    "fireplace": "fireplace crackling sounds",
+    "thunder": "thunderstorm sounds relaxing",
+    "wind": "wind sounds ambient relaxing",
+    "birds": "bird sounds nature morning",
+    "river": "river stream water sounds relaxing",
+    "night": "night sounds crickets ambient",
+}
 
 
 class Utility(commands.Cog):
@@ -258,15 +269,96 @@ class Utility(commands.Cog):
     @commands.hybrid_command(name="musicquiz", description="Start a guess-the-song minigame")
     @cooldown(1, 30.0)
     async def musicquiz(self, ctx: commands.Context) -> None:
-        """Start a music quiz. Full implementation in Phase 6."""
-        await ctx.send("Music quiz coming in Phase 6!", ephemeral=True)
+        """Start a music quiz based on this server's play history."""
+        # Track active quizzes per guild
+        if not hasattr(self, "_active_quizzes"):
+            self._active_quizzes: dict[int, MusicQuiz] = {}
+
+        if ctx.guild.id in self._active_quizzes and self._active_quizzes[ctx.guild.id].running:
+            await ctx.send("A quiz is already running in this server!", ephemeral=True)
+            return
+
+        from core.quiz import MusicQuiz
+
+        quiz = MusicQuiz(ctx, self.bot)
+        self._active_quizzes[ctx.guild.id] = quiz
+
+        try:
+            await quiz.start()
+        finally:
+            self._active_quizzes.pop(ctx.guild.id, None)
 
     @commands.hybrid_command(name="ambience", description="Play ambient background sounds")
-    @app_commands.describe(action="play or stop", sound="Sound name (rain, cafe, etc.)")
+    @app_commands.describe(action="list, play, or stop", sound="Sound name (rain, cafe, etc.)")
     @cooldown(1, 5.0)
     async def ambience(self, ctx: commands.Context, action: str, sound: str | None = None) -> None:
-        """Play ambient sounds. Full implementation in Phase 6."""
-        await ctx.send("Ambience player coming in Phase 6!", ephemeral=True)
+        """Play ambient background sounds."""
+        action = action.lower()
+
+        if action == "list":
+            embed = discord.Embed(
+                title="Available Ambient Sounds",
+                description="\n".join(f"• `{name}`" for name in sorted(AMBIENCE_QUERIES.keys())),
+                color=discord.Color.green(),
+            )
+            embed.set_footer(text="Use !ambience play <sound> to start")
+            await ctx.send(embed=embed)
+            return
+
+        if action == "stop":
+            player = self.bot.get_player(ctx.guild.id)
+            if player:
+                await player.stop()
+                await ctx.send("Ambience stopped.")
+            else:
+                await ctx.send("Nothing is playing.", ephemeral=True)
+            return
+
+        if action == "play":
+            if not sound:
+                await ctx.send(
+                    "Specify a sound name. Use `!ambience list` to see options.", ephemeral=True
+                )
+                return
+
+            sound_lower = sound.lower()
+            if sound_lower not in AMBIENCE_QUERIES:
+                available = ", ".join(f"`{n}`" for n in sorted(AMBIENCE_QUERIES.keys()))
+                await ctx.send(f"Unknown sound. Available: {available}", ephemeral=True)
+                return
+
+            await ctx.defer()
+
+            from core.extractor import search_track
+
+            query = AMBIENCE_QUERIES[sound_lower]
+            track = await search_track(query)
+            if not track:
+                await ctx.send("Could not find ambient sound.", ephemeral=True)
+                return
+
+            # Get or create player via Music cog
+            music_cog = self.bot.get_cog("Music")
+            if music_cog is None:
+                await ctx.send("Music cog not loaded.", ephemeral=True)
+                return
+
+            player = await music_cog._get_or_create_player(ctx)
+            player.queue.add(track)
+
+            if not player.is_playing and not player.is_paused:
+                await player.play_next()
+
+            await ctx.send(
+                embed=discord.Embed(
+                    title=f"Ambience: {sound.title()}",
+                    description=f"Now playing: **{track.short_title}**",
+                    color=discord.Color.green(),
+                )
+            )
+            return
+
+        await ctx.send("Invalid action. Use `list`, `play`, or `stop`.", ephemeral=True)
 
     @commands.hybrid_command(name="voiceregion", description="Show voice server region")
     @cooldown(1, 5.0)
