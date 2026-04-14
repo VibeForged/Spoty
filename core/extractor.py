@@ -219,6 +219,11 @@ def _info_to_track(info: dict[str, Any]) -> Track | None:
     )
 
 
+def shutdown_pool() -> None:
+    """Shut down the extraction thread pool."""
+    _thread_pool.shutdown(wait=False)
+
+
 async def update_ytdlp() -> bool:
     """Auto-update yt-dlp to the latest version.
 

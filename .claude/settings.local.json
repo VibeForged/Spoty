@@ -3,7 +3,8 @@
     "allow": [
       "Bash(wc:*)",
       "Bash(python:*)",
-      "Bash(py:*)"
+      "Bash(py:*)",
+      "Bash(grep:*)"
     ]
   }
 }

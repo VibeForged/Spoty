@@ -36,8 +36,16 @@ class NowPlayingView(discord.ui.View):
             return "Loop: Track"
         return "Loop: Queue"
 
+    def _check_player(self, interaction: discord.Interaction) -> bool:
+        """Return True if player is destroyed (and handle the interaction)."""
+        return self.player._destroyed
+
     @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, emoji="\u23f8")
     async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self._check_player(interaction):
+            await interaction.response.send_message("Player is no longer active.", ephemeral=True)
+            self.stop()
+            return
         if self.player.is_paused:
             await self.player.resume()
         else:
@@ -49,18 +57,30 @@ class NowPlayingView(discord.ui.View):
 
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, emoji="\u23ed")
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self._check_player(interaction):
+            await interaction.response.send_message("Player is no longer active.", ephemeral=True)
+            self.stop()
+            return
         await self.player.skip()
         await interaction.response.send_message("Skipped!", ephemeral=True)
         self.stop()
 
     @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="\u23f9")
     async def stop_player(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self._check_player(interaction):
+            await interaction.response.send_message("Player is no longer active.", ephemeral=True)
+            self.stop()
+            return
         await self.player.stop()
         await interaction.response.send_message("Stopped playback.", ephemeral=True)
         self.stop()
 
     @discord.ui.button(label="Loop: Off", style=discord.ButtonStyle.secondary, emoji="\U0001f501")
     async def loop(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self._check_player(interaction):
+            await interaction.response.send_message("Player is no longer active.", ephemeral=True)
+            self.stop()
+            return
         mode = self.player.queue.loop_mode
         if mode == LoopMode.OFF:
             self.player.queue.loop_mode = LoopMode.TRACK
