@@ -1,7 +1,4 @@
-"""Playlists cog — persistent per-user playlist management.
-
-Phase 1 stub. Full implementation in Phase 3.
-"""
+"""Playlists cog persistent per-user playlist management."""
 
 from __future__ import annotations
 
@@ -446,27 +443,31 @@ class Playlists(commands.Cog):
         # YouTube playlist import
         from core.extractor import extract_playlist
 
-        tracks = await extract_playlist(source)
+        playlist_name, tracks = await extract_playlist(source)
         if not tracks:
             await ctx.send("No tracks found in that playlist.", ephemeral=True)
             return
 
-        pl_name = tracks[0].title if len(tracks) == 1 else "Imported Playlist"
+        logger.info("Extracted {} deduplicated tracks from YouTube playlist", len(tracks))
 
         new_playlist = await PlaylistRepo.create(
-            ctx.guild.id, ctx.author.id, pl_name
+            ctx.guild.id, ctx.author.id, playlist_name
         )
         track_dicts = [
             {"title": t.title, "url": t.url, "duration": t.duration} for t in tracks
         ]
-        await PlaylistTrackRepo.bulk_add_tracks(
+        
+        logger.info("Adding {} track dicts to playlist {}", len(track_dicts), new_playlist.id)
+        added_tracks = await PlaylistTrackRepo.bulk_add_tracks(
             new_playlist.id, track_dicts, ctx.author.id
         )
+        logger.info("Successfully added {} tracks to playlist {}", len(added_tracks), new_playlist.id)
+        
         await ctx.send(
             embed=discord.Embed(
                 title="Playlist Imported",
                 description=(
-                    f"Imported **{len(track_dicts)}** tracks as **{pl_name}**"
+                    f"Imported **{len(added_tracks)}** tracks as **{playlist_name}**"
                 ),
                 color=discord.Color.green(),
             )

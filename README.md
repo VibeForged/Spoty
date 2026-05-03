@@ -57,6 +57,7 @@ All configuration is via environment variables or `.env` file. See `.env.example
 | `LAVALINK_PASSWORD` | `youshallnotpass` | Lavalink password |
 | `SPOTIPY_CLIENT_ID` | | Spotify API client ID |
 | `SPOTIPY_CLIENT_SECRET` | | Spotify API client secret |
+| `YTDLP_COOKIES_FILE` | | Path to YouTube cookies file (for age-restricted content) |
 
 ## Commands
 

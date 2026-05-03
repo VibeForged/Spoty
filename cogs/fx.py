@@ -1,7 +1,4 @@
-"""Audio effects cog — preset system and FX management.
-
-Phase 1 stub. Full implementation in Phase 4.
-"""
+"""Audio effects cog preset system and FX management."""
 
 from __future__ import annotations
 

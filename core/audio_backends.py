@@ -54,6 +54,10 @@ class BaseAudioBackend(ABC):
     def position_ms(self) -> int: ...
 
     @property
+    @abstractmethod
+    def is_connected(self) -> bool: ...
+
+    @property
     def supports_filters(self) -> bool:
         return True
 
@@ -126,6 +130,10 @@ class FFmpegBackend(BaseAudioBackend):
         if self._paused:
             elapsed -= time.monotonic() - self._pause_start
         return int(elapsed * 1000)
+
+    @property
+    def is_connected(self) -> bool:
+        return self._vc.is_connected()
 
     async def play(self, track: Track, seek: float | None = None) -> None:
         stream_url = track.stream_url or await extract_track_url(track)
@@ -251,6 +259,12 @@ class LavalinkBackend(BaseAudioBackend):
     @property
     def position_ms(self) -> int:
         return int(self._vc.position or 0)
+
+    @property
+    def is_connected(self) -> bool:
+        if callable(getattr(self._vc, "is_connected", None)):
+            return self._vc.is_connected()
+        return bool(getattr(self._vc, "connected", False))
 
     async def play(self, track: Track, seek: float | None = None) -> None:
         try:

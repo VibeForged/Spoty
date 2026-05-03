@@ -1,7 +1,4 @@
-"""Queue management cog — loop, shuffle, move, remove, clear, grab.
-
-Phase 1 stub with basic queue display. Full implementation in Phase 2.
-"""
+"""Queue management cog loop, shuffle, move, remove, clear, grab."""
 
 from __future__ import annotations
 

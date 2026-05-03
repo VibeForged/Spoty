@@ -217,6 +217,7 @@ class PlaylistTrackRepo:
 
         Each dict should have keys: title, url, duration.
         Auto-increments position from the last existing position.
+        Deduplicates by title+duration to prevent adding the same track multiple times.
         """
         async with get_session() as session:
             result = await session.execute(
@@ -227,11 +228,27 @@ class PlaylistTrackRepo:
             )
             last_pos = result.scalar_one_or_none() or 0
 
+            # Get existing track titles to avoid duplicates against the DB
+            existing_result = await session.execute(
+                select(PlaylistTrack.title).where(
+                    PlaylistTrack.playlist_id == playlist_id
+                )
+            )
+            # Use lowercase stripped titles for existing tracks
+            existing_titles = {row[0].lower().strip() for row in existing_result.all()}
+
             new_tracks = []
-            for i, t in enumerate(tracks, start=1):
+            position = last_pos
+            for t in tracks:
+                title_key = t["title"].lower().strip()
+                # Skip if this track title already exists in the playlist
+                if title_key in existing_titles:
+                    continue
+                    
+                position += 1
                 track = PlaylistTrack(
                     playlist_id=playlist_id,
-                    position=last_pos + i,
+                    position=position,
                     title=t["title"],
                     url=t["url"],
                     duration=t.get("duration"),
