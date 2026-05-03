@@ -10,6 +10,7 @@ import yt_dlp
 from cachetools import TTLCache
 from loguru import logger
 
+from config import BotConfig
 from core.track import Track
 
 # Bounded thread pool for yt-dlp extraction (sync library)
@@ -19,16 +20,24 @@ _thread_pool = ThreadPoolExecutor(max_workers=3)
 _extraction_cache: TTLCache[str, dict[str, Any]] = TTLCache(maxsize=200, ttl=600)
 
 # yt-dlp options for audio extraction (no download)
-YDL_OPTS: dict[str, Any] = {
-    "format": "bestaudio/best",
-    "noplaylist": True,
-    "no_warnings": True,
-    "quiet": True,
-    "extract_flat": False,
-    "source_address": "0.0.0.0",
-    "default_search": "ytsearch",
-    "geo_bypass": True,
-}
+def _get_ydl_opts() -> dict[str, Any]:
+    """Get yt-dlp options with optional cookie support."""
+    config = BotConfig()
+    opts = {
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "no_warnings": True,
+        "quiet": True,
+        "extract_flat": False,
+        "source_address": "0.0.0.0",
+        "default_search": "ytsearch",
+        "geo_bypass": True,
+    }
+    if config.ytdlp_cookies_file:
+        opts["cookiefile"] = config.ytdlp_cookies_file
+    return opts
+
+YDL_OPTS = _get_ydl_opts()
 
 YDL_PLAYLIST_OPTS: dict[str, Any] = {
     **YDL_OPTS,
@@ -137,21 +146,25 @@ async def extract_track_url(track: Track) -> str | None:
     return info.get("url")
 
 
-async def extract_playlist(url: str) -> list[Track]:
+async def extract_playlist(url: str) -> tuple[str, list[Track]]:
     """Extract all tracks from a playlist URL.
 
     Args:
         url: YouTube/SoundCloud playlist URL.
 
     Returns:
-        List of Track objects (up to 200).
+        Tuple of (playlist_name, list of Track objects) (up to 200).
     """
     info = await extract_info(url, opts=YDL_PLAYLIST_OPTS)
     if info is None:
-        return []
+        return "Imported Playlist", []
+
+    # Get playlist title if available
+    playlist_name = info.get("title", "Imported Playlist")
 
     entries = info.get("entries", [])
     tracks = []
+    
     for entry in entries:
         if entry is None:
             continue
@@ -159,8 +172,8 @@ async def extract_playlist(url: str) -> list[Track]:
         if track:
             tracks.append(track)
 
-    logger.info("Extracted {} tracks from playlist: {}", len(tracks), url[:80])
-    return tracks
+    logger.info("Extracted {} tracks from playlist: {} ({})", len(tracks), playlist_name, url[:80])
+    return playlist_name, tracks
 
 
 async def get_related_tracks(video_id: str, limit: int = 5) -> list[Track]:

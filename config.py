@@ -40,6 +40,9 @@ class BotConfig(BaseSettings):
     spotipy_client_id: str = ""
     spotipy_client_secret: str = ""
 
+    # --- yt-dlp ---
+    ytdlp_cookies_file: str = ""
+
     @property
     def spotify_configured(self) -> bool:
         """Check if Spotify credentials are provided."""

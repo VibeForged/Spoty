@@ -1,4 +1,4 @@
-"""Dev/Admin cog — owner-only commands for bot management."""
+"""Dev/Admin cog owner-only commands for bot management."""
 
 from __future__ import annotations
 

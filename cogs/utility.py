@@ -1,4 +1,4 @@
-"""Utility cog — help, ping, lyrics, history, stats, feedback, quiz, ambience."""
+"""Utility cog help, ping, lyrics, history, stats, feedback, quiz, ambience."""
 
 from __future__ import annotations
 
@@ -55,6 +55,14 @@ class Utility(commands.Cog):
             )
             if cmd.aliases:
                 embed.add_field(name="Aliases", value=", ".join(f"`{a}`" for a in cmd.aliases))
+            
+            # Show subcommands if this is a group
+            if isinstance(cmd, commands.Group):
+                subcommands = [c for c in cmd.commands if not c.hidden]
+                if subcommands:
+                    subcommand_names = ", ".join(f"`{c.name}`" for c in sorted(subcommands, key=lambda c: c.name))
+                    embed.add_field(name="Subcommands", value=subcommand_names, inline=False)
+            
             usage = cmd.usage or cmd.signature
             if usage:
                 embed.add_field(name="Usage", value=f"`{ctx.prefix}{cmd.qualified_name} {usage}`")
@@ -68,10 +76,10 @@ class Utility(commands.Cog):
         )
 
         for cog_name, cog in sorted(self.bot.cogs.items()):
-            cmds = cog.get_commands()
+            cmds = [c for c in cog.get_commands() if not c.hidden]
             if not cmds:
                 continue
-            cmd_list = ", ".join(f"`{c.name}`" for c in cmds[:15])
+            cmd_list = ", ".join(f"`{c.name}`" for c in sorted(cmds, key=lambda command: command.name))
             embed.add_field(name=cog_name, value=cmd_list, inline=False)
 
         await ctx.send(embed=embed)
@@ -138,7 +146,7 @@ class Utility(commands.Cog):
     @app_commands.describe(query="Song to search lyrics for (defaults to current track)")
     @cooldown(1, 5.0)
     async def lyrics(self, ctx: commands.Context, *, query: str | None = None) -> None:
-        """Fetch lyrics for the current track or a search query. Full in Phase 6."""
+        """Fetch lyrics for the current track or a search query."""
         if query is None:
             player = self.bot.get_player(ctx.guild.id)
             if player and player.current:
@@ -150,9 +158,9 @@ class Utility(commands.Cog):
         await ctx.defer()
 
         try:
-            import syncedlyrics
+            from core.lyrics import fetch_lyrics
 
-            lrc = syncedlyrics.search(query)
+            lrc = await fetch_lyrics(query)
             if lrc:
                 # Truncate to embed limit
                 if len(lrc) > 4000:

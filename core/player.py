@@ -46,6 +46,10 @@ class MusicPlayer:
         return self._backend.voice_client
 
     @property
+    def is_connected(self) -> bool:
+        return self._backend.is_connected
+
+    @property
     def backend_name(self) -> str:
         return self._backend.name
 

@@ -1,4 +1,4 @@
-"""Music quiz minigame — text-only guess-the-song."""
+"""Music quiz minigame text-only guess-the-song."""
 
 from __future__ import annotations
 

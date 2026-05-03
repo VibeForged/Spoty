@@ -1,8 +1,4 @@
-"""Music cog — core playback commands.
-
-Phase 1: play, skip, stop, queue, join, leave, nowplaying, pause, resume.
-Phase 2 will add: seek, volume, replay, jump, playtop, playnow.
-"""
+"""Music cog core playback commands."""
 
 from __future__ import annotations
 
@@ -44,7 +40,7 @@ class Music(commands.Cog):
         guild_id = ctx.guild.id
         player = self.bot.get_player(guild_id)
 
-        if player and player.voice_client and player.voice_client.is_connected():
+        if player and player.is_connected:
             return player
 
         # Stale player — destroy before creating new one
@@ -252,7 +248,7 @@ class Music(commands.Cog):
         target = channel or ctx.author.voice.channel
 
         player = self.bot.get_player(ctx.guild.id)
-        if player and player.voice_client and player.voice_client.is_connected():
+        if player and player.is_connected:
             if player.voice_client.channel == target:
                 await ctx.send("Already connected to this channel.", ephemeral=True)
                 return

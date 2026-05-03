@@ -1,7 +1,4 @@
-"""Settings cog — per-guild configuration management.
-
-Phase 1 stub. Full implementation in Phase 5.
-"""
+"""Settings cog per-guild configuration management."""
 
 from __future__ import annotations
 
