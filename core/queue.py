@@ -55,6 +55,14 @@ class MusicQueue:
         return len(self._tracks)
 
     @property
+    def max_size(self) -> int:
+        return self._max_size
+
+    @property
+    def remaining_capacity(self) -> int:
+        return max(0, self._max_size - len(self._tracks))
+
+    @property
     def is_empty(self) -> bool:
         return len(self._tracks) == 0
 
@@ -65,7 +73,7 @@ class MusicQueue:
     @property
     def total_duration(self) -> int:
         """Total duration of all tracks in the queue in seconds."""
-        return sum(t.duration or 0 for t in self._tracks)
+        return int(sum(t.duration or 0 for t in self._tracks))
 
     def add(self, track: Track) -> int:
         """Add a track to the end of the queue. Returns the position."""

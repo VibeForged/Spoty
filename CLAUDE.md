@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Run the bot
-python bot.py
+py bot.py
 
 # Install dependencies
 pip install -r requirements.txt
@@ -57,7 +57,7 @@ Discord music bot (Python 3.11+, discord.py) with dual audio backend support and
 
 ### Database
 
-7 SQLAlchemy models in `core/models.py`: GuildSettings, Playlist, PlaylistTrack, PlaylistVote, FXPreset, History, Stats, Permission. Migrations managed via Alembic.
+8 SQLAlchemy models in `core/models.py`: GuildSettings, Playlist, PlaylistItem, PlaylistItemVote, FXPreset, History, Stats, Permission. Migrations managed via Alembic.
 
 ## Code Style
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import random
 import re
-import string
 from typing import TYPE_CHECKING
 
 import discord
@@ -14,11 +13,9 @@ from discord.ext import commands
 from loguru import logger
 
 from core.checks import cooldown
-from core.errors import (
-    NotPlaylistOwner,
-    PlaylistAlreadyExists,
-    PlaylistNotFound,
-)
+from core.errors import InvalidPlaylistPosition, PlaylistNotFound, TrackNotFound
+from core.playlists.service import MAX_IMPORT_ITEMS, PlaylistService
+from core.ui.playlist_paginator import PlaylistPaginator, build_playlist_embed
 
 if TYPE_CHECKING:
     from bot import MusicBot
@@ -41,17 +38,11 @@ class Playlists(commands.Cog):
     @cooldown(1, 5.0)
     async def playlist_create(self, ctx: commands.Context, *, name: str) -> None:
         """Create a new empty playlist."""
-        from core.repositories import PlaylistRepo
-
-        existing = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if existing:
-            raise PlaylistAlreadyExists(name)
-
-        await PlaylistRepo.create(ctx.guild.id, ctx.author.id, name)
+        playlist = await PlaylistService.create_playlist(ctx.guild.id, ctx.author.id, name)
         await ctx.send(
             embed=discord.Embed(
                 title="Playlist Created",
-                description=f"Created playlist **{name}**",
+                description=f"Created playlist **{playlist.name}**",
                 color=discord.Color.green(),
             )
         )
@@ -61,18 +52,7 @@ class Playlists(commands.Cog):
     @cooldown(1, 5.0)
     async def playlist_delete(self, ctx: commands.Context, *, name: str) -> None:
         """Delete a playlist you own."""
-        from core.repositories import PlaylistRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        if playlist.owner_id != ctx.author.id:
-            # Check if admin
-            if not ctx.author.guild_permissions.manage_guild:
-                raise NotPlaylistOwner()
-
-        await PlaylistRepo.delete_playlist(playlist.id)
+        await PlaylistService.delete_playlist(ctx.guild.id, ctx.author.id, name)
         await ctx.send(f"Deleted playlist **{name}**")
 
     @playlist.command(name="add", description="Add a track to a playlist")
@@ -81,86 +61,62 @@ class Playlists(commands.Cog):
     async def playlist_add(self, ctx: commands.Context, name: str, *, query: str) -> None:
         """Add a track to one of your playlists."""
         from core.extractor import search_track
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
 
         await ctx.defer()
         track = await search_track(query)
         if not track:
-            from core.errors import TrackNotFound
             raise TrackNotFound(query)
 
-        await PlaylistTrackRepo.add_track(
-            playlist.id, track.title, track.url, track.duration, ctx.author.id
+        position = await PlaylistService.add_item(
+            ctx.guild.id,
+            ctx.author.id,
+            name,
+            PlaylistService.item_from_track(track),
         )
-        count = await PlaylistTrackRepo.count(playlist.id)
-        await ctx.send(f"Added **{track.short_title}** to **{name}** (#{count})")
+        await ctx.send(f"Added **{track.short_title}** to **{name}** (#{position})")
 
     @playlist.command(name="remove", description="Remove a track from a playlist")
     @app_commands.describe(name="Playlist name", position="Track position (1-indexed)")
     @cooldown(1, 3.0)
     async def playlist_remove(self, ctx: commands.Context, name: str, position: int) -> None:
         """Remove a track from your playlist at a given position."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        if await PlaylistTrackRepo.remove_track(playlist.id, position):
-            await ctx.send(f"Removed track #{position} from **{name}**")
-        else:
-            await ctx.send(f"No track at position {position}.", ephemeral=True)
+        await PlaylistService.remove_item(ctx.guild.id, ctx.author.id, name, position)
+        await ctx.send(f"Removed track #{position} from **{name}**")
 
     @playlist.command(name="list", description="List your playlists")
     @cooldown(1, 3.0)
     async def playlist_list(self, ctx: commands.Context) -> None:
         """List all your playlists in this server."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        playlists = await PlaylistRepo.list_for_user(ctx.guild.id, ctx.author.id)
+        playlists = await PlaylistService.list_user_playlists(ctx.guild.id, ctx.author.id)
         if not playlists:
             await ctx.send("You don't have any playlists. Create one with `/playlist create`!")
             return
 
         embed = discord.Embed(title="Your Playlists", color=discord.Color.blue())
-        lines = []
-        for pl in playlists:
-            count = await PlaylistTrackRepo.count(pl.id)
-            lines.append(f"**{pl.name}** — {count} tracks")
-        embed.description = "\n".join(lines)
+        embed.description = "\n".join(
+            f"**{playlist.name}** - {playlist.track_count} tracks" for playlist in playlists
+        )
         await ctx.send(embed=embed)
 
     @playlist.command(name="view", description="View tracks in a playlist")
-    @app_commands.describe(name="Playlist name")
+    @app_commands.describe(name="Playlist name", page="Page number")
     @cooldown(1, 3.0)
-    async def playlist_view(self, ctx: commands.Context, *, name: str) -> None:
-        """View all tracks in a playlist."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        tracks = await PlaylistTrackRepo.get_tracks(playlist.id)
-        if not tracks:
-            await ctx.send(f"Playlist **{name}** is empty.")
+    async def playlist_view(
+        self, ctx: commands.Context, name: str, page: int = 1
+    ) -> None:
+        """View tracks in a playlist."""
+        view = PlaylistPaginator(ctx.guild.id, ctx.author.id, name, page=page)
+        detail = await PlaylistService.get_playlist_detail(
+            ctx.guild.id, ctx.author.id, name, page=page
+        )
+        if not detail.items:
+            await ctx.send(f"Playlist **{detail.playlist.name}** is empty.")
             return
 
-        embed = discord.Embed(title=f"Playlist: {name}", color=discord.Color.blue())
-        lines = []
-        for t in tracks[:25]:  # Show first 25
-            dur = f" [{t.duration // 60}:{t.duration % 60:02d}]" if t.duration else ""
-            lines.append(f"`{t.position}.` {t.title[:60]}{dur}")
-        embed.description = "\n".join(lines)
-
-        if len(tracks) > 25:
-            embed.set_footer(text=f"Showing 25/{len(tracks)} tracks")
-
-        await ctx.send(embed=embed)
+        view.page = detail.page
+        view.total_pages = detail.total_pages
+        view._sync_controls()
+        await ctx.send(embed=build_playlist_embed(detail), view=view)
 
     @playlist.command(name="play", description="Load a playlist into the queue")
     @app_commands.describe(name="Playlist name", shuffle="Shuffle before loading")
@@ -168,52 +124,44 @@ class Playlists(commands.Cog):
     async def playlist_play(self, ctx: commands.Context, name: str, shuffle: bool = False) -> None:
         """Load all tracks from a playlist into the queue."""
         await ctx.defer()
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-        from core.track import Track
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        tracks = await PlaylistTrackRepo.get_tracks(playlist.id)
+        tracks = await PlaylistService.tracks_for_play(ctx.guild.id, ctx.author.id, name)
         if not tracks:
             await ctx.send(f"Playlist **{name}** is empty.", ephemeral=True)
             return
 
-        # Get or create player
         music_cog = self.bot.get_cog("Music")
         if music_cog is None:
             await ctx.send("Music cog not loaded.", ephemeral=True)
             return
 
         player = await music_cog._get_or_create_player(ctx)
-
-        # Convert to Track objects
-        track_list = [
-            Track(
-                title=t.title,
-                url=t.url,
-                duration=t.duration,
-                requester_id=ctx.author.id,
-                requester_name=ctx.author.display_name,
+        if len(tracks) > player.queue.remaining_capacity:
+            await ctx.send(
+                (
+                    f"Playlist has **{len(tracks)}** tracks, but the queue only has "
+                    f"**{player.queue.remaining_capacity}** open slots."
+                ),
+                ephemeral=True,
             )
-            for t in tracks
-        ]
+            return
+
+        for track in tracks:
+            track.requester_id = ctx.author.id
+            track.requester_name = ctx.author.display_name
 
         if shuffle:
-            random.shuffle(track_list)
+            random.shuffle(tracks)
 
-        for track in track_list:
+        for track in tracks:
             player.queue.add(track)
 
-        # Start playing if not already
         if not player.is_playing and not player.is_paused:
             await player.play_next()
 
         await ctx.send(
             embed=discord.Embed(
                 title="Playlist Loaded",
-                description=f"Added **{len(track_list)}** tracks from **{name}**",
+                description=f"Added **{len(tracks)}** tracks from **{name}**",
                 color=discord.Color.green(),
             )
         )
@@ -223,23 +171,14 @@ class Playlists(commands.Cog):
     @cooldown(1, 10.0)
     async def playlist_share(self, ctx: commands.Context, *, name: str) -> None:
         """Generate a shareable code for your playlist."""
-        from core.repositories import PlaylistRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        if playlist.share_code:
-            code = playlist.share_code
-        else:
-            code = "".join(random.choices(string.ascii_letters + string.digits, k=8))
-            await PlaylistRepo.update_share_code(playlist.id, code)
-
+        code = await PlaylistService.generate_share_code(ctx.guild.id, ctx.author.id, name)
         await ctx.send(
             embed=discord.Embed(
                 title="Playlist Share Code",
-                description=f"Share code for **{name}**: `{code}`\n"
-                f"Others can import with `/playlist import {code}`",
+                description=(
+                    f"Share code for **{name}**: `{code}`\n"
+                    f"Others can import with `/playlist import {code}`"
+                ),
                 color=discord.Color.green(),
             )
         )
@@ -249,42 +188,33 @@ class Playlists(commands.Cog):
     @cooldown(1, 5.0)
     async def playlist_rename(self, ctx: commands.Context, old_name: str, new_name: str) -> None:
         """Rename one of your playlists."""
-        from core.repositories import PlaylistRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, old_name)
-        if not playlist:
-            raise PlaylistNotFound(old_name)
-
-        await PlaylistRepo.rename(playlist.id, new_name)
-        await ctx.send(f"Renamed **{old_name}** to **{new_name}**")
+        final_name = await PlaylistService.rename_playlist(
+            ctx.guild.id, ctx.author.id, old_name, new_name
+        )
+        await ctx.send(f"Renamed **{old_name}** to **{final_name}**")
 
     @playlist.command(name="info", description="Show playlist metadata")
     @app_commands.describe(name="Playlist name")
     @cooldown(1, 3.0)
     async def playlist_info(self, ctx: commands.Context, *, name: str) -> None:
         """Show metadata for a playlist."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        tracks = await PlaylistTrackRepo.get_tracks(playlist.id)
-        total_duration = sum(t.duration or 0 for t in tracks)
-        hours, remainder = divmod(total_duration, 3600)
+        info = await PlaylistService.get_playlist_info(ctx.guild.id, ctx.author.id, name)
+        playlist = info.playlist
+        hours, remainder = divmod(info.total_duration, 3600)
         minutes, _ = divmod(remainder, 60)
 
         owner = ctx.guild.get_member(playlist.owner_id)
         owner_name = owner.display_name if owner else "Unknown"
 
-        embed = discord.Embed(title=f"Playlist: {name}", color=discord.Color.blue())
+        embed = discord.Embed(title=f"Playlist: {playlist.name}", color=discord.Color.blue())
         embed.add_field(name="Creator", value=owner_name, inline=True)
-        embed.add_field(name="Tracks", value=str(len(tracks)), inline=True)
+        embed.add_field(name="Tracks", value=str(playlist.track_count), inline=True)
         embed.add_field(
             name="Total Duration",
             value=f"{hours}h {minutes}m" if hours else f"{minutes}m",
             inline=True,
         )
+        embed.add_field(name="Visibility", value=playlist.visibility, inline=True)
         embed.add_field(
             name="Created",
             value=discord.utils.format_dt(playlist.created_at, "R"),
@@ -292,15 +222,10 @@ class Playlists(commands.Cog):
         )
         if playlist.share_code:
             embed.add_field(name="Share Code", value=f"`{playlist.share_code}`", inline=True)
-
         await ctx.send(embed=embed)
 
     async def _import_spotify(self, url: str) -> tuple[str, list[dict]]:
-        """Import tracks from a Spotify playlist or album URL.
-
-        Returns (name, tracks) where tracks is a list of dicts with
-        title, url, and duration keys.
-        """
+        """Import tracks from a Spotify playlist or album URL."""
         import spotipy
 
         sp = spotipy.Spotify(
@@ -311,63 +236,53 @@ class Playlists(commands.Cog):
         )
 
         loop = asyncio.get_running_loop()
-
-        # Parse playlist or album ID from URL
         playlist_match = re.search(r"playlist/([a-zA-Z0-9]+)", url)
         album_match = re.search(r"album/([a-zA-Z0-9]+)", url)
 
         tracks: list[dict] = []
-
         if playlist_match:
             sp_id = playlist_match.group(1)
             sp_playlist = await loop.run_in_executor(None, sp.playlist, sp_id)
             name = sp_playlist["name"]
-
             results = sp_playlist["tracks"]
             while True:
-                for item in results["items"]:
-                    t = item.get("track")
-                    if not t:
-                        continue
-                    artists = ", ".join(a["name"] for a in t["artists"])
-                    title = f"{artists} - {t['name']}"
-                    tracks.append(
-                        {
-                            "title": title,
-                            "url": f"ytsearch:{artists} - {t['name']}",
-                            "duration": t["duration_ms"] // 1000,
-                        }
-                    )
-                if results["next"]:
-                    results = await loop.run_in_executor(None, sp.next, results)
-                else:
+                self._append_spotify_tracks(results["items"], tracks)
+                if len(tracks) >= MAX_IMPORT_ITEMS or not results["next"]:
                     break
-
+                results = await loop.run_in_executor(None, sp.next, results)
         elif album_match:
             sp_id = album_match.group(1)
             sp_album = await loop.run_in_executor(None, sp.album, sp_id)
             name = sp_album["name"]
-
             results = sp_album["tracks"]
             while True:
-                for t in results["items"]:
-                    artists = ", ".join(a["name"] for a in t["artists"])
-                    title = f"{artists} - {t['name']}"
-                    tracks.append(
-                        {
-                            "title": title,
-                            "url": f"ytsearch:{artists} - {t['name']}",
-                            "duration": t["duration_ms"] // 1000,
-                        }
-                    )
-                if results["next"]:
-                    results = await loop.run_in_executor(None, sp.next, results)
-                else:
+                self._append_spotify_tracks(results["items"], tracks)
+                if len(tracks) >= MAX_IMPORT_ITEMS or not results["next"]:
                     break
+                results = await loop.run_in_executor(None, sp.next, results)
         else:
             raise ValueError("Could not parse Spotify playlist or album URL.")
 
-        return name, tracks
+        return name, tracks[:MAX_IMPORT_ITEMS]
+
+    @staticmethod
+    def _append_spotify_tracks(items: list[dict], tracks: list[dict]) -> None:
+        for item in items:
+            track = item.get("track", item)
+            if not track:
+                continue
+            artists = ", ".join(a["name"] for a in track["artists"])
+            title = f"{artists} - {track['name']}"
+            tracks.append(
+                {
+                    "title": title,
+                    "url": f"ytsearch:{artists} - {track['name']}",
+                    "duration": track["duration_ms"] // 1000,
+                    "source": "spotify",
+                }
+            )
+            if len(tracks) >= MAX_IMPORT_ITEMS:
+                break
 
     @playlist.command(
         name="import", description="Import a playlist from YouTube/Spotify URL or share code"
@@ -376,39 +291,28 @@ class Playlists(commands.Cog):
     @cooldown(1, 15.0)
     async def playlist_import(self, ctx: commands.Context, *, source: str) -> None:
         """Import a playlist from a URL or share code."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
         await ctx.defer()
 
-        # Check if it's a share code (8 chars alphanumeric)
         if len(source) == 8 and source.isalnum():
-            shared = await PlaylistRepo.get_by_share_code(source)
-            if shared:
-                new_name = f"{shared.name} (imported)"
-                new_playlist = await PlaylistRepo.create(
-                    ctx.guild.id, ctx.author.id, new_name
+            try:
+                playlist = await PlaylistService.import_share_code(
+                    ctx.guild.id, ctx.author.id, source
                 )
-                shared_tracks = await PlaylistTrackRepo.get_tracks(shared.id)
-                track_dicts = [
-                    {"title": t.title, "url": t.url, "duration": t.duration}
-                    for t in shared_tracks
-                ]
-                await PlaylistTrackRepo.bulk_add_tracks(
-                    new_playlist.id, track_dicts, ctx.author.id
-                )
+            except PlaylistNotFound:
+                playlist = None
+            if playlist is not None:
                 await ctx.send(
                     embed=discord.Embed(
                         title="Playlist Imported",
                         description=(
-                            f"Imported **{len(track_dicts)}** tracks from "
-                            f"**{shared.name}** as **{new_name}**"
+                            f"Imported **{playlist.track_count}** tracks as "
+                            f"**{playlist.name}**"
                         ),
                         color=discord.Color.green(),
                     )
                 )
                 return
 
-        # Check for Spotify URL
         if "spotify.com" in source:
             if not self.bot.config.spotify_configured:
                 await ctx.send(
@@ -423,24 +327,20 @@ class Playlists(commands.Cog):
                 await ctx.send("No tracks found in that Spotify URL.", ephemeral=True)
                 return
 
-            new_playlist = await PlaylistRepo.create(
-                ctx.guild.id, ctx.author.id, name
-            )
-            await PlaylistTrackRepo.bulk_add_tracks(
-                new_playlist.id, track_dicts, ctx.author.id
+            playlist = await PlaylistService.import_items(
+                ctx.guild.id, ctx.author.id, name, track_dicts
             )
             await ctx.send(
                 embed=discord.Embed(
                     title="Spotify Playlist Imported",
                     description=(
-                        f"Imported **{len(track_dicts)}** tracks from **{name}**"
+                        f"Imported **{playlist.track_count}** tracks as **{playlist.name}**"
                     ),
                     color=discord.Color.green(),
                 )
             )
             return
 
-        # YouTube playlist import
         from core.extractor import extract_playlist
 
         playlist_name, tracks = await extract_playlist(source)
@@ -448,27 +348,17 @@ class Playlists(commands.Cog):
             await ctx.send("No tracks found in that playlist.", ephemeral=True)
             return
 
-        logger.info("Extracted {} deduplicated tracks from YouTube playlist", len(tracks))
-
-        new_playlist = await PlaylistRepo.create(
-            ctx.guild.id, ctx.author.id, playlist_name
+        logger.info("Extracted {} tracks from playlist import", len(tracks))
+        playlist = await PlaylistService.import_items(
+            ctx.guild.id,
+            ctx.author.id,
+            playlist_name,
+            [PlaylistService.item_from_track(track) for track in tracks[:MAX_IMPORT_ITEMS]],
         )
-        track_dicts = [
-            {"title": t.title, "url": t.url, "duration": t.duration} for t in tracks
-        ]
-        
-        logger.info("Adding {} track dicts to playlist {}", len(track_dicts), new_playlist.id)
-        added_tracks = await PlaylistTrackRepo.bulk_add_tracks(
-            new_playlist.id, track_dicts, ctx.author.id
-        )
-        logger.info("Successfully added {} tracks to playlist {}", len(added_tracks), new_playlist.id)
-        
         await ctx.send(
             embed=discord.Embed(
                 title="Playlist Imported",
-                description=(
-                    f"Imported **{len(added_tracks)}** tracks as **{playlist_name}**"
-                ),
+                description=f"Imported **{playlist.track_count}** tracks as **{playlist.name}**",
                 color=discord.Color.green(),
             )
         )
@@ -478,58 +368,36 @@ class Playlists(commands.Cog):
     @cooldown(1, 3.0)
     async def playlist_like(self, ctx: commands.Context, name: str, position: int) -> None:
         """Upvote a track in a playlist."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo, PlaylistVoteRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        track = await PlaylistTrackRepo.get_track_at_position(playlist.id, position)
-        if not track:
-            await ctx.send(f"No track at position {position}.", ephemeral=True)
-            return
-
-        await PlaylistVoteRepo.upsert_vote(track.id, ctx.author.id, 1)
-        likes, dislikes = await PlaylistVoteRepo.get_votes(track.id)
-
-        await ctx.send(
-            embed=discord.Embed(
-                title="Track Liked",
-                description=(
-                    f"**{track.title}**\n"
-                    f"Likes: {likes} | Dislikes: {dislikes}"
-                ),
-                color=discord.Color.green(),
-            )
-        )
+        await self._vote(ctx, name, position, 1)
 
     @playlist.command(name="dislike", description="Downvote a track in a playlist")
     @app_commands.describe(name="Playlist name", position="Track position")
     @cooldown(1, 3.0)
     async def playlist_dislike(self, ctx: commands.Context, name: str, position: int) -> None:
         """Downvote a track in a playlist."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo, PlaylistVoteRepo
+        await self._vote(ctx, name, position, -1)
 
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        track = await PlaylistTrackRepo.get_track_at_position(playlist.id, position)
-        if not track:
+    async def _vote(
+        self, ctx: commands.Context, name: str, position: int, vote: int
+    ) -> None:
+        try:
+            item, (likes, dislikes) = await PlaylistService.vote_item(
+                ctx.guild.id,
+                ctx.author.id,
+                name,
+                position,
+                ctx.author.id,
+                vote,
+            )
+        except InvalidPlaylistPosition:
             await ctx.send(f"No track at position {position}.", ephemeral=True)
             return
 
-        await PlaylistVoteRepo.upsert_vote(track.id, ctx.author.id, -1)
-        likes, dislikes = await PlaylistVoteRepo.get_votes(track.id)
-
         await ctx.send(
             embed=discord.Embed(
-                title="Track Disliked",
-                description=(
-                    f"**{track.title}**\n"
-                    f"Likes: {likes} | Dislikes: {dislikes}"
-                ),
-                color=discord.Color.red(),
+                title="Track Liked" if vote == 1 else "Track Disliked",
+                description=f"**{item.title}**\nLikes: {likes} | Dislikes: {dislikes}",
+                color=discord.Color.green() if vote == 1 else discord.Color.red(),
             )
         )
 
@@ -538,36 +406,16 @@ class Playlists(commands.Cog):
     @cooldown(1, 5.0)
     async def playlist_copy(self, ctx: commands.Context, source: str, new_name: str) -> None:
         """Copy a playlist (own or shared) to a new name."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        # Try own playlist first
-        src_playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, source)
-        if not src_playlist:
-            # Try share code
-            src_playlist = await PlaylistRepo.get_by_share_code(source)
-        if not src_playlist:
-            raise PlaylistNotFound(source)
-
-        # Check new_name doesn't exist
-        existing = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, new_name)
-        if existing:
-            raise PlaylistAlreadyExists(new_name)
-
-        new_playlist = await PlaylistRepo.create(ctx.guild.id, ctx.author.id, new_name)
-        src_tracks = await PlaylistTrackRepo.get_tracks(src_playlist.id)
-        track_dicts = [
-            {"title": t.title, "url": t.url, "duration": t.duration}
-            for t in src_tracks
-        ]
-        await PlaylistTrackRepo.bulk_add_tracks(
-            new_playlist.id, track_dicts, ctx.author.id
+        playlist = await PlaylistService.copy_playlist(
+            ctx.guild.id,
+            ctx.author.id,
+            source,
+            new_name,
         )
         await ctx.send(
             embed=discord.Embed(
                 title="Playlist Copied",
-                description=(
-                    f"Copied **{len(track_dicts)}** tracks to **{new_name}**"
-                ),
+                description=f"Copied **{playlist.track_count}** tracks to **{playlist.name}**",
                 color=discord.Color.green(),
             )
         )
@@ -577,25 +425,14 @@ class Playlists(commands.Cog):
     @cooldown(1, 5.0)
     async def playlist_shuffle(self, ctx: commands.Context, *, name: str) -> None:
         """Permanently shuffle the stored order of a playlist."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        playlist = await PlaylistRepo.get_by_name(ctx.guild.id, ctx.author.id, name)
-        if not playlist:
-            raise PlaylistNotFound(name)
-
-        tracks = await PlaylistTrackRepo.get_tracks(playlist.id)
-        if not tracks:
+        count = await PlaylistService.shuffle_items(ctx.guild.id, ctx.author.id, name)
+        if count == 0:
             await ctx.send(f"Playlist **{name}** is empty.", ephemeral=True)
             return
-
-        track_ids = [t.id for t in tracks]
-        random.shuffle(track_ids)
-        await PlaylistTrackRepo.reorder_tracks(playlist.id, track_ids)
-
         await ctx.send(
             embed=discord.Embed(
                 title="Playlist Shuffled",
-                description=f"Shuffled **{len(tracks)}** tracks in **{name}**",
+                description=f"Shuffled **{count}** tracks in **{name}**",
                 color=discord.Color.green(),
             )
         )

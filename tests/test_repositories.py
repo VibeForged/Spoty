@@ -34,139 +34,100 @@ class TestGuildSettingsRepo:
 
 
 @pytest.mark.asyncio
-class TestPlaylistRepo:
-    async def test_create_and_get(self, db):
-        from core.repositories import PlaylistRepo
+class TestPlaylistService:
+    async def test_create_list_and_share_code(self, db):
+        from core.playlists.service import PlaylistService
 
-        pl = await PlaylistRepo.create(1, 100, "My Playlist")
-        assert pl.name == "My Playlist"
-        fetched = await PlaylistRepo.get_by_name(1, 100, "My Playlist")
-        assert fetched is not None
-        assert fetched.id == pl.id
+        playlist = await PlaylistService.create_playlist(1, 100, "My Playlist")
+        code = await PlaylistService.generate_share_code(1, 100, playlist.name)
+        playlists = await PlaylistService.list_user_playlists(1, 100)
 
-    async def test_list_for_user(self, db):
-        from core.repositories import PlaylistRepo
+        assert playlists[0].name == "My_Playlist"
+        assert playlists[0].visibility == "private"
+        assert len(code) == 8
 
-        await PlaylistRepo.create(1, 100, "Playlist A")
-        await PlaylistRepo.create(1, 100, "Playlist B")
-        playlists = await PlaylistRepo.list_for_user(1, 100)
-        assert len(playlists) == 2
+    async def test_remove_middle_track_compacts_positions(self, db):
+        from core.playlists.service import PlaylistService
 
-    async def test_share_code(self, db):
-        from core.repositories import PlaylistRepo
+        await PlaylistService.create_playlist(1, 100, "Positions")
+        for title in ("A", "B", "C"):
+            await PlaylistService.add_item(
+                1,
+                100,
+                "Positions",
+                PlaylistService.item_from_mapping(
+                    {"title": title, "url": f"http://{title}", "duration": 100}
+                ),
+            )
 
-        pl = await PlaylistRepo.create(1, 100, "Shared")
-        await PlaylistRepo.update_share_code(pl.id, "abc12345")
-        found = await PlaylistRepo.get_by_share_code("abc12345")
-        assert found is not None
-        assert found.id == pl.id
+        await PlaylistService.remove_item(1, 100, "Positions", 2)
+        await PlaylistService.add_item(
+            1,
+            100,
+            "Positions",
+            PlaylistService.item_from_mapping(
+                {"title": "D", "url": "http://d", "duration": 100}
+            ),
+        )
+        detail = await PlaylistService.get_playlist_detail(1, 100, "Positions")
 
-    async def test_rename(self, db):
-        from core.repositories import PlaylistRepo
-
-        pl = await PlaylistRepo.create(1, 100, "OldName")
-        await PlaylistRepo.rename(pl.id, "NewName")
-        found = await PlaylistRepo.get_by_name(1, 100, "NewName")
-        assert found is not None
-
-    async def test_delete_playlist(self, db):
-        from core.repositories import PlaylistRepo
-
-        pl = await PlaylistRepo.create(1, 100, "ToDelete")
-        await PlaylistRepo.delete_playlist(pl.id)
-        found = await PlaylistRepo.get_by_name(1, 100, "ToDelete")
-        assert found is None
-
-
-@pytest.mark.asyncio
-class TestPlaylistTrackRepo:
-    async def test_add_and_get_tracks(self, db):
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        pl = await PlaylistRepo.create(1, 100, "Test")
-        await PlaylistTrackRepo.add_track(pl.id, "Song 1", "http://url1", 200, 100)
-        await PlaylistTrackRepo.add_track(pl.id, "Song 2", "http://url2", 300, 100)
-        tracks = await PlaylistTrackRepo.get_tracks(pl.id)
-        assert len(tracks) == 2
-        assert tracks[0].position == 1
-        assert tracks[1].position == 2
-
-    async def test_remove_track(self, db):
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        pl = await PlaylistRepo.create(1, 100, "Test")
-        await PlaylistTrackRepo.add_track(pl.id, "Song 1", "http://url1", 200, 100)
-        removed = await PlaylistTrackRepo.remove_track(pl.id, 1)
-        assert removed is True
-        assert await PlaylistTrackRepo.count(pl.id) == 0
-
-    async def test_bulk_add_tracks(self, db):
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
-
-        pl = await PlaylistRepo.create(1, 100, "Test")
-        tracks = [
-            {"title": "A", "url": "http://a", "duration": 100},
-            {"title": "B", "url": "http://b", "duration": 200},
-            {"title": "C", "url": "http://c", "duration": 300},
+        assert [(item.title, item.position) for item in detail.items] == [
+            ("A", 1),
+            ("C", 2),
+            ("D", 3),
         ]
-        await PlaylistTrackRepo.bulk_add_tracks(pl.id, tracks, 100)
-        all_tracks = await PlaylistTrackRepo.get_tracks(pl.id)
-        assert len(all_tracks) == 3
-        assert all_tracks[0].title == "A"
-        assert all_tracks[2].position == 3
+        assert detail.playlist.track_count == 3
 
-    async def test_get_track_at_position(self, db):
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
+    async def test_private_playlist_requires_owner_or_share_code(self, db):
+        from core.errors import PlaylistNotFound
+        from core.playlists.service import PlaylistService
 
-        pl = await PlaylistRepo.create(1, 100, "Test")
-        await PlaylistTrackRepo.add_track(pl.id, "Song 1", "http://url1", 200, 100)
-        track = await PlaylistTrackRepo.get_track_at_position(pl.id, 1)
-        assert track is not None
-        assert track.title == "Song 1"
-        none_track = await PlaylistTrackRepo.get_track_at_position(pl.id, 99)
-        assert none_track is None
+        await PlaylistService.create_playlist(1, 100, "Private")
+        await PlaylistService.add_item(
+            1,
+            100,
+            "Private",
+            PlaylistService.item_from_mapping(
+                {"title": "Song", "url": "http://song", "duration": 100}
+            ),
+        )
 
-    async def test_reorder_tracks(self, db):
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
+        with pytest.raises(PlaylistNotFound):
+            await PlaylistService.get_playlist_detail(1, 200, "Private")
 
-        pl = await PlaylistRepo.create(1, 100, "Test")
-        await PlaylistTrackRepo.add_track(pl.id, "A", "http://a", 100, 100)
-        await PlaylistTrackRepo.add_track(pl.id, "B", "http://b", 200, 100)
-        await PlaylistTrackRepo.add_track(pl.id, "C", "http://c", 300, 100)
-        tracks = await PlaylistTrackRepo.get_tracks(pl.id)
-        # Reverse order
-        reversed_ids = [t.id for t in reversed(tracks)]
-        await PlaylistTrackRepo.reorder_tracks(pl.id, reversed_ids)
-        reordered = await PlaylistTrackRepo.get_tracks(pl.id)
-        assert reordered[0].title == "C"
-        assert reordered[1].title == "B"
-        assert reordered[2].title == "A"
+        code = await PlaylistService.generate_share_code(1, 100, "Private")
+        copied = await PlaylistService.copy_playlist(1, 200, code, "Private Copy")
 
+        assert copied.name == "Private_Copy"
+        assert copied.track_count == 1
 
-@pytest.mark.asyncio
-class TestPlaylistVoteRepo:
-    async def test_upsert_vote(self, db):
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo, PlaylistVoteRepo
+    async def test_copy_generates_non_conflicting_name(self, db):
+        from core.playlists.service import PlaylistService
 
-        pl = await PlaylistRepo.create(1, 100, "Test")
-        await PlaylistTrackRepo.add_track(pl.id, "Song", "http://url", 200, 100)
-        track = await PlaylistTrackRepo.get_track_at_position(pl.id, 1)
-        await PlaylistVoteRepo.upsert_vote(track.id, 200, 1)
-        likes, dislikes = await PlaylistVoteRepo.get_votes(track.id)
-        assert likes == 1
-        assert dislikes == 0
+        await PlaylistService.create_playlist(1, 100, "Original")
+        await PlaylistService.create_playlist(1, 100, "Copy")
+        copied = await PlaylistService.copy_playlist(1, 100, "Original", "Copy")
 
-    async def test_change_vote(self, db):
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo, PlaylistVoteRepo
+        assert copied.name == "Copy_2"
 
-        pl = await PlaylistRepo.create(1, 100, "Test")
-        await PlaylistTrackRepo.add_track(pl.id, "Song", "http://url", 200, 100)
-        track = await PlaylistTrackRepo.get_track_at_position(pl.id, 1)
-        await PlaylistVoteRepo.upsert_vote(track.id, 200, 1)
-        await PlaylistVoteRepo.upsert_vote(track.id, 200, -1)
-        likes, dislikes = await PlaylistVoteRepo.get_votes(track.id)
-        assert likes == 0
-        assert dislikes == 1
+    async def test_vote_counts_are_aggregated(self, db):
+        from core.playlists.service import PlaylistService
+
+        await PlaylistService.create_playlist(1, 100, "Votes")
+        await PlaylistService.add_item(
+            1,
+            100,
+            "Votes",
+            PlaylistService.item_from_mapping(
+                {"title": "Song", "url": "http://song", "duration": 100}
+            ),
+        )
+
+        _, counts = await PlaylistService.vote_item(1, 100, "Votes", 1, 200, 1)
+        assert counts == (1, 0)
+
+        _, counts = await PlaylistService.vote_item(1, 100, "Votes", 1, 200, -1)
+        assert counts == (0, 1)
 
 
 @pytest.mark.asyncio

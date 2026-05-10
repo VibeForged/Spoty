@@ -32,6 +32,7 @@ def _get_ydl_opts() -> dict[str, Any]:
         "source_address": "0.0.0.0",
         "default_search": "ytsearch",
         "geo_bypass": True,
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
     if config.ytdlp_cookies_file:
         opts["cookiefile"] = config.ytdlp_cookies_file
@@ -225,7 +226,7 @@ def _info_to_track(info: dict[str, Any]) -> Track | None:
     return Track(
         title=title,
         url=url,
-        duration=info.get("duration"),
+        duration=int(info.get("duration")) if info.get("duration") is not None else None,
         source=info.get("extractor_key", "youtube").lower(),
         thumbnail=info.get("thumbnail"),
         stream_url=info.get("url") if info.get("url", "").startswith("http") else None,
