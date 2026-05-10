@@ -155,10 +155,10 @@ pytest tests/test_permissions.py -v
 pytest --tb=short
 
 # Run only a specific test class
-pytest tests/test_repositories.py::TestPlaylistRepo -v
+pytest tests/test_repositories.py::TestPlaylistService -v
 
 # Run only a specific test
-pytest tests/test_repositories.py::TestPlaylistRepo::test_create_and_get -v
+pytest tests/test_repositories.py::TestPlaylistService::test_create_list_and_share_code -v
 ```
 
 ### Test Structure

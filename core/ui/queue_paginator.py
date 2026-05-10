@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class QueuePaginator(discord.ui.View):
     """Paginated view for the music queue.
 
-    Shows 10 tracks per page with Previous/Next navigation buttons.
+    Shows 8 tracks per page with Previous/Next navigation buttons.
     """
 
     def __init__(self, player: MusicPlayer, page: int = 1, timeout: float = 120.0) -> None:
@@ -23,7 +23,7 @@ class QueuePaginator(discord.ui.View):
 
     def build_embed(self) -> discord.Embed:
         """Build the queue embed for the current page."""
-        tracks, total_pages = self.player.queue.get_page(self.page, per_page=10)
+        tracks, total_pages = self.player.queue.get_page(self.page, per_page=8)
 
         embed = discord.Embed(title="Music Queue", color=discord.Color.blue())
 
@@ -40,7 +40,7 @@ class QueuePaginator(discord.ui.View):
         if not tracks:
             embed.add_field(name="Queue", value="Empty", inline=False)
         else:
-            start_idx = (self.page - 1) * 10
+            start_idx = (self.page - 1) * 8
             lines = []
             for i, track in enumerate(tracks, start=start_idx + 1):
                 lines.append(f"`{i}.` [{track.short_title}]({track.url}) `{track.duration_str}`")
@@ -76,7 +76,7 @@ class QueuePaginator(discord.ui.View):
             await interaction.response.send_message("Player is no longer active.", ephemeral=True)
             self.stop()
             return
-        _, total_pages = self.player.queue.get_page(self.page)
+        _, total_pages = self.player.queue.get_page(self.page, per_page=8)
         self.page = min(total_pages, self.page + 1)
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 

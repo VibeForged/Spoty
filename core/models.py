@@ -49,30 +49,36 @@ class Playlist(Base):
 
     __tablename__ = "playlists"
     __table_args__ = (
-        UniqueConstraint("guild_id", "owner_id", "name", name="uq_playlist_guild_owner_name"),
-        Index("idx_playlists_guild", "guild_id"),
+        UniqueConstraint("guild_id", "owner_id", "name_key", name="uq_playlist_guild_owner_name_key"),
+        UniqueConstraint("share_code", name="uq_playlist_share_code"),
+        Index("idx_playlists_guild_owner", "guild_id", "owner_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     guild_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     owner_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    share_code: Mapped[str | None] = mapped_column(String(8), unique=True, nullable=True)
-    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    name_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    visibility: Mapped[str] = mapped_column(String(20), default="private", nullable=False)
+    share_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    track_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
-    tracks: Mapped[list[PlaylistTrack]] = relationship(
-        back_populates="playlist", cascade="all, delete-orphan", order_by="PlaylistTrack.position"
+    items: Mapped[list[PlaylistItem]] = relationship(
+        back_populates="playlist", cascade="all, delete-orphan", order_by="PlaylistItem.position"
     )
 
 
-class PlaylistTrack(Base):
+class PlaylistItem(Base):
     """A track within a playlist."""
 
-    __tablename__ = "playlist_tracks"
+    __tablename__ = "playlist_items"
     __table_args__ = (
-        UniqueConstraint("playlist_id", "position", name="uq_pt_playlist_position"),
-        Index("idx_pt_playlist", "playlist_id"),
+        UniqueConstraint("playlist_id", "position", name="uq_pi_playlist_position"),
+        Index("idx_pi_playlist_position", "playlist_id", "position"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -81,35 +87,41 @@ class PlaylistTrack(Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
-    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    source: Mapped[str] = mapped_column(String(30), default="unknown", nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thumbnail: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     added_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    likes: Mapped[int] = mapped_column(Integer, default=0)
-    dislikes: Mapped[int] = mapped_column(Integer, default=0)
     added_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    playlist: Mapped[Playlist] = relationship(back_populates="tracks")
-    votes: Mapped[list[PlaylistVote]] = relationship(
-        back_populates="track", cascade="all, delete-orphan"
+    playlist: Mapped[Playlist] = relationship(back_populates="items")
+    votes: Mapped[list[PlaylistItemVote]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
     )
 
 
-class PlaylistVote(Base):
+class PlaylistItemVote(Base):
     """Per-user vote on a playlist track (like/dislike)."""
 
-    __tablename__ = "playlist_votes"
+    __tablename__ = "playlist_item_votes"
     __table_args__ = (
-        UniqueConstraint("playlist_track_id", "user_id", name="uq_vote_track_user"),
+        UniqueConstraint("playlist_item_id", "user_id", name="uq_vote_item_user"),
+        Index("idx_piv_item_vote", "playlist_item_id", "vote"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    playlist_track_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("playlist_tracks.id", ondelete="CASCADE"), nullable=False
+    playlist_item_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("playlist_items.id", ondelete="CASCADE"), nullable=False
     )
     user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     vote: Mapped[int] = mapped_column(Integer, nullable=False)  # +1 or -1
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
-    track: Mapped[PlaylistTrack] = relationship(back_populates="votes")
+    item: Mapped[PlaylistItem] = relationship(back_populates="votes")
 
 
 class FXPreset(Base):

@@ -146,6 +146,34 @@ class NotPlaylistOwner(PlaylistError):
         super().__init__("You don't own this playlist.")
 
 
+class PlaylistAccessDenied(PlaylistError):
+    """User cannot access the requested playlist."""
+
+    def __init__(self) -> None:
+        super().__init__("You don't have access to that playlist.")
+
+
+class InvalidPlaylistName(PlaylistError):
+    """Playlist name is invalid."""
+
+    def __init__(self, reason: str = "Playlist name must be 1-100 characters.") -> None:
+        super().__init__(reason)
+
+
+class InvalidPlaylistPosition(PlaylistError):
+    """Playlist track position is invalid."""
+
+    def __init__(self, position: int) -> None:
+        super().__init__(f"No track at position {position}.")
+
+
+class PlaylistLimitExceeded(PlaylistError):
+    """Playlist operation would exceed a configured limit."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"Playlist limit exceeded (max {limit} tracks).")
+
+
 # --- FX Errors ---
 
 

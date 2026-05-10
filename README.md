@@ -7,7 +7,7 @@ A feature-rich Discord music bot with dual audio backend support, playlists, FX 
 - **Dual Audio Backend** — Lavalink (primary) with automatic FFmpeg fallback
 - **Music Playback** — Play from YouTube, SoundCloud, Spotify, and direct URLs
 - **Queue Management** — Add, remove, shuffle, loop, and reorder tracks
-- **Playlists** — Create, share, import, copy, and vote on playlist tracks
+- **Playlists** — Private-by-default playlists with share codes, imports, copies, pagination, and voting
 - **Audio Effects** — 12 built-in presets (nightcore, bassboost, 8D, etc.) + custom presets
 - **Interactive FX Builder** — Visual UI for combining effects into custom presets
 - **Permission System** — 4-tier (Owner/Admin/DJ/Everyone) with per-command role overrides
@@ -68,7 +68,9 @@ All configuration is via environment variables or `.env` file. See `.env.example
 `queue`, `remove`, `clear`, `shuffle`, `loop`, `move`
 
 ### Playlists
-`playlist create`, `playlist delete`, `playlist add`, `playlist remove`, `playlist list`, `playlist view`, `playlist play`, `playlist share`, `playlist import`, `playlist copy`, `playlist shuffle`, `playlist like`, `playlist dislike`
+`playlist create`, `playlist delete`, `playlist add`, `playlist remove`, `playlist list`, `playlist view`, `playlist play`, `playlist share`, `playlist import`, `playlist copy`, `playlist shuffle`, `playlist like`, `playlist dislike`, `playlist rename`, `playlist info`
+
+Playlists are private by default. Names are stored with spaces converted to underscores for prefix-command use. A share code allows other users to import or copy a playlist, but not edit it.
 
 ### Effects
 `setfx`, `clearfx`, `currenteffects`, `fxpreset list`, `fxpreset create`, `fxpreset delete`, `fxpreset builder`

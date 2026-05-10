@@ -9,49 +9,59 @@ from core.database import get_session
 
 @pytest.mark.asyncio
 class TestModelRelationships:
-    async def test_playlist_tracks_cascade_delete(self, db):
-        """Deleting a playlist via ORM should cascade delete its tracks."""
-        from sqlalchemy import select
+    async def test_playlist_items_cascade_delete(self, db):
+        """Deleting a playlist should cascade delete items and votes on SQLite."""
+        from sqlalchemy import func, select
 
-        from core.models import Playlist, PlaylistTrack
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo
+        from core.models import PlaylistItem, PlaylistItemVote
+        from core.playlists.service import PlaylistService
 
-        pl = await PlaylistRepo.create(1, 100, "Cascade Test")
-        await PlaylistTrackRepo.add_track(pl.id, "Song", "http://url", 200, 100)
+        playlist = await PlaylistService.create_playlist(1, 100, "Cascade Test")
+        await PlaylistService.add_item(
+            1,
+            100,
+            playlist.name,
+            PlaylistService.item_from_mapping(
+                {"title": "Song", "url": "http://url", "duration": 200}
+            ),
+        )
+        await PlaylistService.vote_item(1, 100, playlist.name, 1, 200, 1)
+        await PlaylistService.delete_playlist(1, 100, playlist.name)
 
-        # Use ORM-level delete (load then delete) so cascade is triggered
         async with get_session() as session:
-            result = await session.execute(select(Playlist).where(Playlist.id == pl.id))
-            playlist = result.scalar_one()
-            await session.delete(playlist)
+            item_count = (
+                await session.execute(select(func.count()).select_from(PlaylistItem))
+            ).scalar_one()
+            vote_count = (
+                await session.execute(select(func.count()).select_from(PlaylistItemVote))
+            ).scalar_one()
 
-        tracks = await PlaylistTrackRepo.get_tracks(pl.id)
-        assert len(tracks) == 0
+        assert item_count == 0
+        assert vote_count == 0
 
-    async def test_playlist_vote_cascade_delete(self, db):
-        """Deleting a playlist track should cascade delete its votes."""
-        from core.repositories import PlaylistRepo, PlaylistTrackRepo, PlaylistVoteRepo
+    async def test_unique_playlist_name_key_per_user_guild(self, db):
+        """Playlist names are unique per user+guild case-insensitively."""
+        from core.errors import PlaylistAlreadyExists
+        from core.playlists.service import PlaylistService
 
-        pl = await PlaylistRepo.create(1, 100, "Vote Cascade")
-        await PlaylistTrackRepo.add_track(pl.id, "Song", "http://url", 200, 100)
-        track = await PlaylistTrackRepo.get_track_at_position(pl.id, 1)
-        await PlaylistVoteRepo.upsert_vote(track.id, 200, 1)
-        await PlaylistTrackRepo.remove_track(pl.id, 1)
-        likes, dislikes = await PlaylistVoteRepo.get_votes(track.id)
-        assert likes == 0 and dislikes == 0
+        await PlaylistService.create_playlist(1, 100, "Unique")
+        with pytest.raises(PlaylistAlreadyExists):
+            await PlaylistService.create_playlist(1, 100, " unique ")
 
-    async def test_unique_playlist_name_per_user_guild(self, db):
-        """Same user+guild can't have duplicate playlist names."""
-        from core.repositories import PlaylistRepo
+    async def test_playlist_name_spaces_become_underscores(self, db):
+        """Playlist names are stored in a prefix-command-friendly form."""
+        from core.playlists.service import PlaylistService
 
-        await PlaylistRepo.create(1, 100, "Unique")
-        with pytest.raises(Exception):
-            await PlaylistRepo.create(1, 100, "Unique")
+        playlist = await PlaylistService.create_playlist(1, 100, "My Cool Mix")
+
+        assert playlist.name == "My_Cool_Mix"
+        assert playlist.name_key == "my_cool_mix"
 
     async def test_different_users_same_playlist_name(self, db):
-        """Different users in same guild can have same playlist name."""
-        from core.repositories import PlaylistRepo
+        """Different users in the same guild can use the same playlist name."""
+        from core.playlists.service import PlaylistService
 
-        await PlaylistRepo.create(1, 100, "Shared Name")
-        pl2 = await PlaylistRepo.create(1, 200, "Shared Name")
-        assert pl2 is not None
+        await PlaylistService.create_playlist(1, 100, "Shared Name")
+        playlist = await PlaylistService.create_playlist(1, 200, "Shared Name")
+
+        assert playlist is not None

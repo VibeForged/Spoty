@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from loguru import logger
-from sqlalchemy import inspect, text
+from sqlalchemy import event, inspect, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -34,6 +34,13 @@ async def init_db(database_url: str) -> None:
         pool_pre_ping=True,
     )
 
+    if _engine.dialect.name == "sqlite":
+        @event.listens_for(_engine.sync_engine, "connect")
+        def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
     _session_factory = async_sessionmaker(
         _engine,
         class_=AsyncSession,
@@ -53,6 +60,29 @@ async def init_db(database_url: str) -> None:
 async def _run_schema_upgrades(conn) -> None:
     """Apply lightweight additive schema upgrades for existing installations."""
     dialect = conn.dialect.name
+    table_names = await conn.run_sync(lambda sync_conn: set(inspect(sync_conn).get_table_names()))
+    if "playlists" in table_names:
+        playlist_columns = await conn.run_sync(
+            lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("playlists")}
+        )
+        if "name_key" not in playlist_columns or "playlist_items" not in table_names:
+            logger.warning("Rebuilding playlist tables for the v2 playlist schema")
+            for table_name in (
+                "playlist_item_votes",
+                "playlist_votes",
+                "playlist_items",
+                "playlist_tracks",
+                "playlists",
+            ):
+                if table_name in table_names:
+                    await conn.execute(text(f"DROP TABLE {table_name}"))
+
+            from core.models import Playlist, PlaylistItem, PlaylistItemVote
+
+            await conn.run_sync(Playlist.__table__.create)
+            await conn.run_sync(PlaylistItem.__table__.create)
+            await conn.run_sync(PlaylistItemVote.__table__.create)
+
     columns = await conn.run_sync(
         lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("fx_presets")}
     )
