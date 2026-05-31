@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,7 +12,7 @@ class BotConfig(BaseSettings):
     """All bot configuration loaded from environment variables / .env file."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=os.environ.get("SPOTY_ENV_FILE", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -42,6 +44,9 @@ class BotConfig(BaseSettings):
 
     # --- yt-dlp ---
     ytdlp_cookies_file: str = ""
+
+    # --- Last.fm (free API for Auto-DJ recommendations) ---
+    lastfm_api_key: str = ""
 
     @property
     def spotify_configured(self) -> bool:

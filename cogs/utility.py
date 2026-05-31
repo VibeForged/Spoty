@@ -29,6 +29,82 @@ AMBIENCE_QUERIES: dict[str, str] = {
     "night": "night sounds crickets ambient",
 }
 
+HELP_CATEGORIES = [
+    {"label": "Music & Playback", "value": "Music", "emoji": "🎵", "desc": "Commands for playing and controlling music"},
+    {"label": "Queue Management", "value": "QueueCog", "emoji": "📜", "desc": "Manage the music queue"},
+    {"label": "Auto-DJ & Discovery", "value": "AutoDJ", "emoji": "🤖", "desc": "Intelligent music recommendations"},
+    {"label": "Audio Effects", "value": "FX", "emoji": "🎛️", "desc": "Filters like bassboost and nightcore"},
+    {"label": "Playlists", "value": "Playlists", "emoji": "📚", "desc": "Save and load custom playlists"},
+    {"label": "Settings & Admin", "value": "Settings", "emoji": "⚙️", "desc": "Server configuration and permissions"},
+    {"label": "Utility & Fun", "value": "Utility", "emoji": "🛠️", "desc": "Stats, history, lyrics, and more"},
+]
+
+class HelpSelect(discord.ui.Select):
+    def __init__(self, bot: MusicBot):
+        self.bot = bot
+        options = [
+            discord.SelectOption(
+                label=cat["label"],
+                value=cat["value"],
+                emoji=cat["emoji"],
+                description=cat["desc"]
+            )
+            for cat in HELP_CATEGORIES
+        ]
+        super().__init__(placeholder="Select a command category...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        cog_name = self.values[0]
+        cog = self.bot.get_cog(cog_name)
+        
+        if not cog:
+            await interaction.response.send_message("Category not found.", ephemeral=True)
+            return
+
+        cat_info = next((c for c in HELP_CATEGORIES if c["value"] == cog_name), None)
+        emoji = cat_info["emoji"] if cat_info else "ℹ️"
+        label = cat_info["label"] if cat_info else cog_name
+
+        embed = discord.Embed(
+            title=f"{emoji} {label} Commands",
+            description=cog.__doc__ or "No description available.",
+            color=discord.Color.blurple()
+        )
+
+        cmds = [c for c in cog.get_commands() if not c.hidden]
+        if not cmds:
+            embed.description = "No commands available in this category."
+        else:
+            for cmd in sorted(cmds, key=lambda c: c.name):
+                # For groups, list subcommands neatly
+                if isinstance(cmd, commands.Group):
+                    subcommands = [c for c in cmd.commands if not c.hidden]
+                    if subcommands:
+                        subs_str = ", ".join(f"`{c.name}`" for c in sorted(subcommands, key=lambda sub: sub.name))
+                        desc = f"{cmd.help or cmd.description or 'Command group'}\n└ *Subcommands: {subs_str}*"
+                        embed.add_field(name=f"/{cmd.name}", value=desc, inline=False)
+                    else:
+                        embed.add_field(name=f"/{cmd.name}", value=cmd.help or cmd.description or "Command group", inline=False)
+                else:
+                    embed.add_field(name=f"/{cmd.name}", value=cmd.help or cmd.description or "No description", inline=False)
+
+        await interaction.response.edit_message(embed=embed, view=self.view)
+
+
+class HelpView(discord.ui.View):
+    def __init__(self, bot: MusicBot):
+        super().__init__(timeout=180)
+        self.add_item(HelpSelect(bot))
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        try:
+            if hasattr(self, "message") and self.message:
+                await self.message.edit(view=self)
+        except Exception:
+            pass
+
 
 class Utility(commands.Cog):
     """Utility and social commands."""
@@ -37,7 +113,7 @@ class Utility(commands.Cog):
         self.bot = bot
         self._start_time = time.monotonic()
 
-    @commands.hybrid_command(name="help", description="Show bot commands")
+    @commands.hybrid_command(name="help", description="Show bot commands in an interactive menu")
     @app_commands.describe(command="Specific command to get help for")
     @cooldown(1, 3.0)
     async def help(self, ctx: commands.Context, command: str | None = None) -> None:
@@ -56,7 +132,6 @@ class Utility(commands.Cog):
             if cmd.aliases:
                 embed.add_field(name="Aliases", value=", ".join(f"`{a}`" for a in cmd.aliases))
             
-            # Show subcommands if this is a group
             if isinstance(cmd, commands.Group):
                 subcommands = [c for c in cmd.commands if not c.hidden]
                 if subcommands:
@@ -66,23 +141,29 @@ class Utility(commands.Cog):
             usage = cmd.usage or cmd.signature
             if usage:
                 embed.add_field(name="Usage", value=f"`{ctx.prefix}{cmd.qualified_name} {usage}`")
-            await ctx.send(embed=embed)
+            await ctx.send(embed=embed, ephemeral=True)
             return
 
+        # Interactive Landing Page
         embed = discord.Embed(
-            title="Music Bot Commands",
-            description=f"Use `{ctx.prefix}help <command>` for detailed info",
-            color=discord.Color.blue(),
+            title="Spoty Music Bot Help",
+            description="Welcome! I'm an advanced music bot with Auto-DJ, Audio Effects, Playlists, and more.\n\n"
+                        "**Quick Start**\n"
+                        "1. Join a voice channel\n"
+                        "2. Use `/play <song>` to start listening\n"
+                        "3. Use `/autodj start` to let me pick the next songs automatically!\n\n"
+                        "*Use the dropdown menu below to explore commands by category.*",
+            color=discord.Color.blurple(),
         )
+        
+        # Add basic stats to make the landing page feel alive
+        players = len(self.bot.players)
+        embed.set_footer(text=f"Currently rocking out in {players} servers 🎸 | Select a category below!")
 
-        for cog_name, cog in sorted(self.bot.cogs.items()):
-            cmds = [c for c in cog.get_commands() if not c.hidden]
-            if not cmds:
-                continue
-            cmd_list = ", ".join(f"`{c.name}`" for c in sorted(cmds, key=lambda command: command.name))
-            embed.add_field(name=cog_name, value=cmd_list, inline=False)
-
-        await ctx.send(embed=embed)
+        view = HelpView(self.bot)
+        # We need to store the message in the view for timeout disabling
+        msg = await ctx.send(embed=embed, view=view, ephemeral=True)
+        view.message = msg
 
     @commands.hybrid_command(name="ping", description="Show bot latency")
     @cooldown(1, 3.0)

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any
+
 
 from loguru import logger
 from sqlalchemy import delete, select, update
+from sqlalchemy import func as sa_func
 
 from core.database import get_session
 from core.filters import (
@@ -17,6 +19,7 @@ from core.filters import (
     serialize_preset_definition,
 )
 from core.models import (
+    AutoDJFeedback,
     FXPreset,
     GuildSettings,
     History,
@@ -59,7 +62,7 @@ class GuildSettingsRepo:
             await session.execute(
                 update(GuildSettings)
                 .where(GuildSettings.guild_id == guild_id)
-                .values(**kwargs, updated_at=datetime.utcnow())
+                .values(**kwargs, updated_at=datetime.now(UTC))
             )
 
     @staticmethod
@@ -104,6 +107,72 @@ class HistoryRepo:
                 .limit(limit)
             )
             return list(result.scalars().all())
+
+    @staticmethod
+    async def get_top_tracks(
+        guild_id: int,
+        limit: int = 30,
+        exclude_recent: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Get most-played tracks for a guild, excluding recently played ones.
+
+        Used by Auto-DJ HistorySource for guild-aware recommendations.
+
+        Returns:
+            List of dicts with keys: track_title, track_url, duration, play_count.
+        """
+        async with get_session() as session:
+            # Subquery: get URLs of the N most recently played tracks
+            recent_sub = (
+                select(History.track_url)
+                .where(History.guild_id == guild_id)
+                .order_by(History.played_at.desc())
+                .limit(exclude_recent)
+                .subquery()
+            )
+
+            # Main query: aggregate play counts, excluding recent
+            stmt = (
+                select(
+                    History.track_title,
+                    History.track_url,
+                    History.duration,
+                    sa_func.count(History.id).label("play_count"),
+                )
+                .where(
+                    History.guild_id == guild_id,
+                    History.track_url.notin_(select(recent_sub.c.track_url)),
+                )
+                .group_by(History.track_title, History.track_url, History.duration)
+                .order_by(sa_func.count(History.id).desc())
+                .limit(limit)
+            )
+
+            result = await session.execute(stmt)
+            return [
+                {
+                    "track_title": row.track_title,
+                    "track_url": row.track_url,
+                    "duration": row.duration,
+                    "play_count": row.play_count,
+                }
+                for row in result.all()
+            ]
+
+    @staticmethod
+    async def get_recent_urls(guild_id: int, limit: int = 200) -> set[str]:
+        """Get the set of recently played track URLs for deduplication.
+
+        Used by Auto-DJ engine to avoid recommending recently played tracks.
+        """
+        async with get_session() as session:
+            result = await session.execute(
+                select(History.track_url)
+                .where(History.guild_id == guild_id)
+                .order_by(History.played_at.desc())
+                .limit(limit)
+            )
+            return {row[0] for row in result.all()}
 
 
 class FXPresetRepo:
@@ -326,3 +395,40 @@ class PermissionRepo:
                 delete(Permission).where(Permission.guild_id == guild_id)
             )
             return result.rowcount
+
+
+class AutoDJFeedbackRepo:
+    """Repository for Auto-DJ learning signals."""
+
+    @staticmethod
+    async def add_signal(
+        guild_id: int,
+        track_url: str,
+        signal: str,
+        source: str,
+        artist_hint: str | None = None,
+    ) -> None:
+        """Record a user signal (skip/complete) for a recommendation."""
+        async with get_session() as session:
+            entry = AutoDJFeedback(
+                guild_id=guild_id,
+                track_url=track_url,
+                artist_hint=artist_hint,
+                signal=signal,
+                source=source,
+            )
+            session.add(entry)
+
+    @staticmethod
+    async def get_signals_for_session(
+        guild_id: int, limit: int = 500
+    ) -> list[AutoDJFeedback]:
+        """Get recent feedback signals for a guild's scoring context."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(AutoDJFeedback)
+                .where(AutoDJFeedback.guild_id == guild_id)
+                .order_by(AutoDJFeedback.created_at.desc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())

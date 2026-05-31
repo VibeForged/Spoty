@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -32,9 +31,11 @@ class MusicPlayer:
         self._active_preset_definition: PresetDefinition | None = None
         self.text_channel: discord.TextChannel | None = None
         self._play_lock = asyncio.Lock()
+        self._autodj_lock = asyncio.Lock()
         self._inactive_task: asyncio.Task | None = None
         self._destroyed = False
         self._play_task: asyncio.Task | None = None
+        self._autodj_prefill_task: asyncio.Task | None = None
         self._fallback_announced = False
         self._backend_switch_in_progress = False
         self._consecutive_failures = 0
@@ -123,11 +124,17 @@ class MusicPlayer:
 
             self._play_task = asyncio.create_task(self._wait_and_play_next())
 
+            # Pre-emptive Auto-DJ: start filling queue when it's getting low
+            await self._maybe_prefill_auto_dj()
+
     async def _wait_and_play_next(self) -> None:
         """Wait for the current track to finish, then play next."""
         try:
             error = await self._backend.wait_for_track_end()
             if not self._destroyed:
+                # Record completion signal for Auto-DJ learning
+                if self.current and self.current.requester_name == "Auto-DJ":
+                    await self.bot.autodj_engine.record_completion(self.guild_id, self.current)
                 await self.play_next(error)
         except asyncio.CancelledError:
             pass
@@ -137,6 +144,10 @@ class MusicPlayer:
         if self._play_task:
             self._play_task.cancel()
         await self._backend.stop()
+
+        # Record skip signal for Auto-DJ learning
+        if skipped and skipped.requester_name == "Auto-DJ":
+            await self.bot.autodj_engine.record_skip(self.guild_id, skipped)
 
         was_track_loop = self.queue.loop_mode == LoopMode.TRACK
         if was_track_loop:
@@ -341,6 +352,11 @@ class MusicPlayer:
         await self.text_channel.send(embed=embed)
 
     async def _try_auto_dj(self) -> bool:
+        """Attempt to fill the queue via the Auto-DJ recommendation engine.
+
+        Uses the multi-source pipeline: YouTube Mix → History → Search fallback.
+        Protected by a lock to prevent concurrent triggers.
+        """
         settings = await self.bot.get_guild_settings(self.guild_id)
         if not settings or not settings.autoplay:
             return False
@@ -349,30 +365,105 @@ class MusicPlayer:
         if not history:
             return False
 
-        last_track = history[0]
-        video_id = _extract_video_id(last_track.url)
-        if not video_id:
+        if self._autodj_lock.locked():
+            logger.debug("Auto-DJ: already running for guild {}, skipping", self.guild_id)
             return False
 
-        logger.info("Auto-DJ: fetching related tracks for {}", video_id)
+        async with self._autodj_lock:
+            last_track = history[0]
+            logger.info("Auto-DJ: fetching recommendations for guild {}", self.guild_id)
 
-        from core.extractor import get_related_tracks
+            try:
+                from core.repositories import HistoryRepo
 
-        related = await get_related_tracks(video_id, limit=3)
-        recent_urls = {t.url for t in history[:50]}
-        new_tracks = [t for t in related if t.url not in recent_urls]
+                db_recent_urls = await HistoryRepo.get_recent_urls(self.guild_id, limit=200)
+            except Exception:
+                db_recent_urls = None
+                logger.debug("Auto-DJ: failed to fetch DB history URLs", exc_info=True)
 
-        if not new_tracks:
-            logger.debug("Auto-DJ: no new related tracks found")
-            return False
+            try:
+                new_tracks = await self.bot.autodj_engine.get_recommendations(
+                    guild_id=self.guild_id,
+                    seed_track=last_track,
+                    queue=self.queue,
+                    db_recent_urls=db_recent_urls,
+                )
+            except Exception:
+                logger.error("Auto-DJ: engine error for guild {}", self.guild_id, exc_info=True)
+                return False
 
-        for track in new_tracks:
-            track.requester_name = "Auto-DJ"
-            self.queue.add(track)
+            if not new_tracks:
+                logger.debug("Auto-DJ: no recommendations found for guild {}", self.guild_id)
+                return False
 
-        logger.info("Auto-DJ: added {} tracks to queue", len(new_tracks))
-        await self.play_next()
-        return True
+            for track in new_tracks:
+                track.requester_name = "Auto-DJ"
+                self.queue.add(track)
+
+            logger.info("Auto-DJ: added {} tracks to queue for guild {}", len(new_tracks), self.guild_id)
+            await self.play_next()
+            return True
+
+    async def _maybe_prefill_auto_dj(self) -> None:
+        """Pre-emptively fill the queue when it's getting low (≤1 track remaining).
+
+        Runs as a background task so it doesn't block the current playback.
+        """
+        settings = await self.bot.get_guild_settings(self.guild_id)
+        if not settings or not settings.autoplay:
+            return
+        if self.queue.size > 1:
+            return
+
+        # Don't stack multiple prefill tasks
+        if self._autodj_prefill_task and not self._autodj_prefill_task.done():
+            return
+
+        self._autodj_prefill_task = asyncio.create_task(self._prefill_auto_dj())
+
+    async def _prefill_auto_dj(self) -> None:
+        """Background task to pre-fill the queue with Auto-DJ tracks."""
+        try:
+            if self._autodj_lock.locked():
+                return
+
+            async with self._autodj_lock:
+                seed = self.current
+                if not seed:
+                    return
+
+                try:
+                    from core.repositories import HistoryRepo
+
+                    db_recent_urls = await HistoryRepo.get_recent_urls(self.guild_id, limit=200)
+                except Exception:
+                    db_recent_urls = None
+
+                try:
+                    new_tracks = await self.bot.autodj_engine.get_recommendations(
+                        guild_id=self.guild_id,
+                        seed_track=seed,
+                        queue=self.queue,
+                        db_recent_urls=db_recent_urls,
+                    )
+                except Exception:
+                    logger.debug("Auto-DJ prefill: engine error", exc_info=True)
+                    return
+
+                for track in new_tracks:
+                    track.requester_name = "Auto-DJ"
+                    self.queue.add(track)
+
+                if new_tracks:
+                    logger.info(
+                        "Auto-DJ prefill: added {} tracks for guild {}",
+                        len(new_tracks),
+                        self.guild_id,
+                    )
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.debug("Auto-DJ prefill error", exc_info=True)
 
     def _start_inactive_timer(self) -> None:
         self._cancel_inactive_timer()
@@ -404,21 +495,14 @@ class MusicPlayer:
         self._cancel_inactive_timer()
         if self._play_task:
             self._play_task.cancel()
+        if self._autodj_prefill_task and not self._autodj_prefill_task.done():
+            self._autodj_prefill_task.cancel()
+
+        # Clean up the Auto-DJ session
+        self.bot.autodj_engine.destroy_session(self.guild_id)
 
         try:
             await self._backend.cleanup()
         except Exception:
             logger.debug("Ignored cleanup error during destroy", exc_info=True)
         logger.info("MusicPlayer destroyed for guild {}", self.guild_id)
-
-
-def _extract_video_id(url: str) -> str | None:
-    patterns = [
-        r"(?:v=|/v/|youtu\.be/)([a-zA-Z0-9_-]{11})",
-        r"^([a-zA-Z0-9_-]{11})$",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
