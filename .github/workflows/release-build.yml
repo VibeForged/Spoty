@@ -1,0 +1,150 @@
+name: Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version"
+        required: true
+        default: "1.0.0"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff pytest pytest-asyncio
+
+      - name: Lint
+        run: ruff check launcher.py config.py tests/test_launcher.py
+
+      - name: Test
+        run: pytest --tb=short
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Download JRE
+        shell: pwsh
+        run: |
+          $uri = "https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse"
+          New-Item -ItemType Directory -Force -Path runtime-downloads | Out-Null
+          Invoke-WebRequest -Uri $uri -OutFile runtime-downloads\jre.zip
+          Expand-Archive runtime-downloads\jre.zip -DestinationPath runtime-downloads\jre-expanded
+          $jre = Get-ChildItem runtime-downloads\jre-expanded -Directory | Select-Object -First 1
+          Move-Item $jre.FullName runtime-downloads\jre
+
+      - name: Download FFmpeg
+        shell: pwsh
+        run: |
+          $uri = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          Invoke-WebRequest -Uri $uri -OutFile runtime-downloads\ffmpeg.zip
+          Expand-Archive runtime-downloads\ffmpeg.zip -DestinationPath runtime-downloads\ffmpeg-expanded
+          $ffmpeg = Get-ChildItem runtime-downloads\ffmpeg-expanded -Directory | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path runtime-downloads\ffmpeg\bin | Out-Null
+          Copy-Item "$($ffmpeg.FullName)\bin\ffmpeg.exe" runtime-downloads\ffmpeg\bin\ffmpeg.exe
+
+      - name: Build Windows installer
+        shell: pwsh
+        env:
+          SPOTY_JRE_DIR: runtime-downloads\jre
+          SPOTY_FFMPEG_DIR: runtime-downloads\ffmpeg
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          if (-not $version) { $version = "${{ github.ref_name }}".TrimStart("v") }
+          .\scripts\build-windows.ps1 -AppVersion $version
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpotySetup-windows-x64
+          path: release/windows/SpotySetup.exe
+
+  build-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Download JRE
+        run: |
+          mkdir -p runtime-downloads
+          curl -L "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse" -o runtime-downloads/jre.tar.gz
+          mkdir -p runtime-downloads/jre-expanded
+          tar -xzf runtime-downloads/jre.tar.gz -C runtime-downloads/jre-expanded
+          mv runtime-downloads/jre-expanded/* runtime-downloads/jre
+
+      - name: Download FFmpeg
+        run: |
+          mkdir -p runtime-downloads/ffmpeg/bin
+          curl -L "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" -o runtime-downloads/ffmpeg.tar.xz
+          mkdir -p runtime-downloads/ffmpeg-expanded
+          tar -xJf runtime-downloads/ffmpeg.tar.xz -C runtime-downloads/ffmpeg-expanded
+          cp runtime-downloads/ffmpeg-expanded/*/ffmpeg runtime-downloads/ffmpeg/bin/ffmpeg
+          chmod +x runtime-downloads/ffmpeg/bin/ffmpeg
+
+      - name: Build Linux tarball
+        env:
+          SPOTY_JRE_DIR: runtime-downloads/jre
+          SPOTY_FFMPEG_DIR: runtime-downloads/ffmpeg
+        run: |
+          version="${{ github.event.inputs.version }}"
+          if [ -z "$version" ]; then version="${GITHUB_REF_NAME#v}"; fi
+          APP_VERSION="$version" bash ./scripts/build-linux.sh
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpotyDiscordBot-linux-x64
+          path: release/linux/SpotyDiscordBot-linux-x64.tar.gz
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/SpotySetup-windows-x64/SpotySetup.exe
+            artifacts/SpotyDiscordBot-linux-x64/SpotyDiscordBot-linux-x64.tar.gz

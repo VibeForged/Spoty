@@ -187,3 +187,21 @@ class Permission(Base):
     command_name: Mapped[str] = mapped_column(String(50), nullable=False)
     role_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class AutoDJFeedback(Base):
+    """Tracks skip/complete signals for Auto-DJ learning across sessions."""
+
+    __tablename__ = "autodj_feedback"
+    __table_args__ = (
+        Index("idx_autodj_feedback_guild", "guild_id"),
+        Index("idx_autodj_feedback_guild_url", "guild_id", "track_url"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    track_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    artist_hint: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    signal: Mapped[str] = mapped_column(String(20), nullable=False)  # "skip" | "complete"
+    source: Mapped[str] = mapped_column(String(30), nullable=False)  # recommendation source
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -28,6 +28,7 @@ COGS = [
     "cogs.fx",
     "cogs.playlists",
     "cogs.settings",
+    "cogs.autodj",
     "cogs.utility",
     "cogs.dev",
 ]
@@ -68,6 +69,11 @@ class MusicBot(commands.Bot):
         # Cache for guild settings
         self._settings_cache: dict[int, GuildSettings] = {}
         self.backend_manager = BackendManager(self)
+
+        # Auto-DJ recommendation engine (shared across all guilds)
+        from core.autodj.engine import AutoDJEngine
+
+        self.autodj_engine = AutoDJEngine()
 
     async def get_guild_settings(self, guild_id: int) -> GuildSettings | None:
         """Get guild settings with in-memory caching."""

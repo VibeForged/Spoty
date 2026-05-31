@@ -50,6 +50,7 @@ YDL_PLAYLIST_OPTS: dict[str, Any] = {
 YDL_SEARCH_OPTS: dict[str, Any] = {
     **YDL_OPTS,
     "default_search": "ytsearch5",  # Return up to 5 results
+    "extract_flat": "in_playlist",  # Don't resolve actual stream URLs during search
 }
 
 

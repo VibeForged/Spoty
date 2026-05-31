@@ -101,6 +101,66 @@ ruff format .
 alembic upgrade head
 ```
 
+## Packaged Builds
+
+The packaged app uses a PyInstaller `onedir` launcher. It starts bundled Lavalink on
+`127.0.0.1`, chooses the first free port from `8080` to `8090`, waits for Lavalink
+health, then starts the bot with bundled FFmpeg.
+
+### Windows
+
+Builds produce an Inno Setup installer:
+
+```powershell
+$env:SPOTY_JRE_DIR="C:\path\to\jre"
+$env:SPOTY_FFMPEG_DIR="C:\path\to\ffmpeg"
+.\scripts\build-windows.ps1 -AppVersion 1.0.0
+```
+
+Output:
+
+```text
+release/windows/SpotySetup.exe
+```
+
+Installed app files live under `Program Files/Spoty`. User config, database, and logs live under:
+
+```text
+%APPDATA%/Spoty/
+```
+
+### Linux
+
+Builds produce a portable tarball:
+
+```bash
+export SPOTY_JRE_DIR=/path/to/jre
+export SPOTY_FFMPEG_DIR=/path/to/ffmpeg
+APP_VERSION=1.0.0 bash ./scripts/build-linux.sh
+```
+
+Output:
+
+```text
+release/linux/SpotyDiscordBot-linux-x64.tar.gz
+```
+
+User config, database, and logs live under:
+
+```text
+~/.config/spoty/
+```
+
+### Packaged Runtime Overrides
+
+| Variable | Description |
+|----------|-------------|
+| `SPOTY_USER_DIR` | Override the user data directory |
+| `SPOTY_LAVALINK_DIR` | Override bundled Lavalink directory |
+| `SPOTY_JAVA_BIN` | Override bundled Java executable |
+| `SPOTY_FFMPEG_BIN` | Override bundled FFmpeg executable |
+| `SPOTY_SKIP_LAVALINK=true` | Use an external Lavalink server instead of bundled Lavalink |
+
 ## License
 
 MIT

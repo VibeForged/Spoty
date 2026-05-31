@@ -230,7 +230,11 @@ class Music(commands.Cog):
             color=discord.Color.blue(),
         )
         if track.requester_name != "Unknown":
-            embed.add_field(name="Requested by", value=track.requester_name, inline=True)
+            if track.requester_name == "Auto-DJ":
+                source_str = f" ({track.source})" if track.source else ""
+                embed.add_field(name="Requested by", value=f"🤖 Auto-DJ{source_str}", inline=True)
+            else:
+                embed.add_field(name="Requested by", value=track.requester_name, inline=True)
         embed.add_field(name="Volume", value=f"{player.volume}%", inline=True)
         embed.add_field(name="Loop", value=player.queue.loop_mode.value, inline=True)
         if track.thumbnail:
