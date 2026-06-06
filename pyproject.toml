@@ -15,7 +15,6 @@ dependencies = [
     "aiosqlite>=0.19",
     "alembic>=1.12",
     "aiohttp>=3.9",
-    "spotipy>=2.23",
     "syncedlyrics>=0.7",
     "cachetools>=5.3",
     "rapidfuzz>=3.0",

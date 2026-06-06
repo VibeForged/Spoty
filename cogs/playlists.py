@@ -224,66 +224,6 @@ class Playlists(commands.Cog):
             embed.add_field(name="Share Code", value=f"`{playlist.share_code}`", inline=True)
         await ctx.send(embed=embed)
 
-    async def _import_spotify(self, url: str) -> tuple[str, list[dict]]:
-        """Import tracks from a Spotify playlist or album URL."""
-        import spotipy
-
-        sp = spotipy.Spotify(
-            auth_manager=spotipy.SpotifyClientCredentials(
-                client_id=self.bot.config.spotipy_client_id,
-                client_secret=self.bot.config.spotipy_client_secret,
-            )
-        )
-
-        loop = asyncio.get_running_loop()
-        playlist_match = re.search(r"playlist/([a-zA-Z0-9]+)", url)
-        album_match = re.search(r"album/([a-zA-Z0-9]+)", url)
-
-        tracks: list[dict] = []
-        if playlist_match:
-            sp_id = playlist_match.group(1)
-            sp_playlist = await loop.run_in_executor(None, sp.playlist, sp_id)
-            name = sp_playlist["name"]
-            results = sp_playlist["tracks"]
-            while True:
-                self._append_spotify_tracks(results["items"], tracks)
-                if len(tracks) >= MAX_IMPORT_ITEMS or not results["next"]:
-                    break
-                results = await loop.run_in_executor(None, sp.next, results)
-        elif album_match:
-            sp_id = album_match.group(1)
-            sp_album = await loop.run_in_executor(None, sp.album, sp_id)
-            name = sp_album["name"]
-            results = sp_album["tracks"]
-            while True:
-                self._append_spotify_tracks(results["items"], tracks)
-                if len(tracks) >= MAX_IMPORT_ITEMS or not results["next"]:
-                    break
-                results = await loop.run_in_executor(None, sp.next, results)
-        else:
-            raise ValueError("Could not parse Spotify playlist or album URL.")
-
-        return name, tracks[:MAX_IMPORT_ITEMS]
-
-    @staticmethod
-    def _append_spotify_tracks(items: list[dict], tracks: list[dict]) -> None:
-        for item in items:
-            track = item.get("track", item)
-            if not track:
-                continue
-            artists = ", ".join(a["name"] for a in track["artists"])
-            title = f"{artists} - {track['name']}"
-            tracks.append(
-                {
-                    "title": title,
-                    "url": f"ytsearch:{artists} - {track['name']}",
-                    "duration": track["duration_ms"] // 1000,
-                    "source": "spotify",
-                }
-            )
-            if len(tracks) >= MAX_IMPORT_ITEMS:
-                break
-
     @playlist.command(
         name="import", description="Import a playlist from YouTube/Spotify URL or share code"
     )
@@ -314,18 +254,39 @@ class Playlists(commands.Cog):
                 return
 
         if "spotify.com" in source:
-            if not self.bot.config.spotify_configured:
-                await ctx.send(
-                    "Spotify support is not configured. "
-                    "Set `SPOTIPY_CLIENT_ID` and `SPOTIPY_CLIENT_SECRET` in `.env`.",
-                    ephemeral=True,
-                )
+            import wavelink
+            try:
+                node = wavelink.Pool.get_node()
+                result = await wavelink.Playable.search(source, node=node)
+            except Exception as e:
+                logger.error("Spotify native import failed: {}", e)
+                await ctx.send("Failed to search Spotify.", ephemeral=True)
                 return
 
-            name, track_dicts = await self._import_spotify(source)
-            if not track_dicts:
+            tracks = []
+            name = "Imported Spotify Playlist"
+            if isinstance(result, wavelink.Playlist):
+                name = result.name
+                tracks = result.tracks
+            elif isinstance(result, list) and result:
+                tracks = result
+            elif hasattr(result, "tracks") and result.tracks:
+                if hasattr(result, "name"):
+                    name = getattr(result, "name")
+                tracks = result.tracks
+
+            if not tracks:
                 await ctx.send("No tracks found in that Spotify URL.", ephemeral=True)
                 return
+
+            track_dicts = []
+            for t in tracks[:MAX_IMPORT_ITEMS]:
+                track_dicts.append({
+                    "title": t.title,
+                    "url": t.uri or source,
+                    "duration": t.length // 1000 if t.length else None,
+                    "source": "spotify",
+                })
 
             playlist = await PlaylistService.import_items(
                 ctx.guild.id, ctx.author.id, name, track_dicts

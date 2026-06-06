@@ -3,12 +3,25 @@ server:
   address: 0.0.0.0
 
 lavalink:
+  plugins:
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.3.0"
+      repository: "https://maven.lavalink.dev/releases"
   server:
     password: "youshallnotpass"
     sources:
       youtube: false 
 
 plugins:
+  lavasrc:
+    providers:
+      - "ytsearch:\"%ISRC%\""
+      - "ytsearch:%QUERY%"
+    sources:
+      spotify: true
+    spotify:
+      clientId: ${SPOTIPY_CLIENT_ID:}
+      clientSecret: ${SPOTIPY_CLIENT_SECRET:}
+      countryCode: "US"
   youtube:
     enabled: true # Whether this source can be used.
     allowSearch: true # Whether "ytsearch:" and "ytmsearch:" can be used.
@@ -20,4 +33,4 @@ plugins:
       - MUSIC
       - ANDROID_VR
       - WEB
-      - WEBEMBEDDED 
+      - WEBEMBEDDED

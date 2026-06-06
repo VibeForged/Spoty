@@ -77,7 +77,34 @@ class Music(commands.Cog):
         player.text_channel = ctx.channel
 
         # Search for the track
-        track = await search_track(query)
+        if "spotify.com" in query:
+            import wavelink
+            try:
+                node = wavelink.Pool.get_node()
+                result = await wavelink.Playable.search(query, node=node)
+                playable = None
+                if hasattr(result, "tracks") and result.tracks:
+                    playable = result.tracks[0]
+                elif isinstance(result, list) and result:
+                    playable = result[0]
+                
+                if not playable:
+                    raise TrackNotFound(query)
+                    
+                track = Track(
+                    title=playable.title,
+                    url=playable.uri or query,
+                    duration=playable.length // 1000 if playable.length else None,
+                    source="spotify",
+                    thumbnail=getattr(playable, "artwork", None),
+                    stream_url=None
+                )
+            except Exception as e:
+                logger.error("Spotify native search failed: {}", e)
+                raise TrackNotFound(query)
+        else:
+            track = await search_track(query)
+            
         if track is None:
             raise TrackNotFound(query)
 

@@ -38,20 +38,11 @@ class BotConfig(BaseSettings):
     # --- FFmpeg ---
     ffmpeg_path: str = "ffmpeg"
 
-    # --- Spotify ---
-    spotipy_client_id: str = ""
-    spotipy_client_secret: str = ""
-
     # --- yt-dlp ---
     ytdlp_cookies_file: str = ""
 
     # --- Last.fm (free API for Auto-DJ recommendations) ---
     lastfm_api_key: str = ""
-
-    @property
-    def spotify_configured(self) -> bool:
-        """Check if Spotify credentials are provided."""
-        return bool(self.spotipy_client_id and self.spotipy_client_secret)
 
     # --- Logging ---
     log_level: str = "INFO"
