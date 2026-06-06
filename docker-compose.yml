@@ -12,6 +12,7 @@ services:
 
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4
+    env_file: .env
     environment:
       - SERVER_PORT=8080
       - LAVALINK_SERVER_PASSWORD=youshallnotpass
