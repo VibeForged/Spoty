@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from core.errors import QueueFullError
 from core.queue import LoopMode, MusicQueue
 from core.track import Track
 
@@ -141,7 +142,7 @@ class TestMusicQueue:
         q.add(_make_track("3"))
 
         assert q.is_full
-        with pytest.raises(Exception):  # QueueFull
+        with pytest.raises(QueueFullError):
             q.add(_make_track("4"))
 
     def test_get_page(self):

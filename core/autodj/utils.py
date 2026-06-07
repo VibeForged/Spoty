@@ -17,7 +17,7 @@ def parse_artist_title(raw_title: str) -> tuple[str | None, str]:
         (artist, clean_title) or (None, raw_title) if unparseable.
     """
     # Common suffixes to strip
-    _SUFFIXES = [
+    suffixes = [
         "(Official Video)",
         "(Official Music Video)",
         "(Official Audio)",
@@ -38,14 +38,16 @@ def parse_artist_title(raw_title: str) -> tuple[str | None, str]:
     ]
 
     cleaned = raw_title.strip()
-    for suffix in _SUFFIXES:
-        cleaned = cleaned.replace(suffix, "").strip()
+    # Remove common suffixes
+    for suffix in suffixes:
+        if cleaned.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)].strip()
 
     # Also strip trailing year patterns like "(2024)" or "[2023]"
     cleaned = re.sub(r"[\(\[]\d{4}[\)\]]$", "", cleaned).strip()
 
     # Try "Artist - Title" (most common)
-    for sep in (" - ", " – ", " — ", " | "):
+    for sep in (" - ", " – ", " — ", " | "):  # noqa: RUF001
         if sep in cleaned:
             parts = cleaned.split(sep, 1)
             artist = parts[0].strip()

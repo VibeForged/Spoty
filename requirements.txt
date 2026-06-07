@@ -18,8 +18,7 @@ python-dotenv>=1.0
 # HTTP
 aiohttp>=3.9
 
-# Spotify natively handled via Lavasrc plugin in Lavalink
-
+# Scrapers
 # Lyrics
 syncedlyrics>=0.7
 

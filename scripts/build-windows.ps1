@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$AppVersion = "1.0.0",
     [string]$JreDir = $env:SPOTY_JRE_DIR,
     [string]$FfmpegDir = $env:SPOTY_FFMPEG_DIR,
@@ -86,10 +86,7 @@ python -m pip install -r (Join-Path $Root "requirements.txt")
 python -m pip install pyinstaller ruff pytest pytest-asyncio
 
 if (-not $SkipTests) {
-    python -m ruff check `
-        (Join-Path $Root "launcher.py") `
-        (Join-Path $Root "config.py") `
-        (Join-Path $Root "tests\test_launcher.py")
+    python -m ruff check $Root
     python -m pytest --tb=short
 }
 

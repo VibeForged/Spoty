@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import socket
 import uuid
-import shutil
 from pathlib import Path
 
 import launcher

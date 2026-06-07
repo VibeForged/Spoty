@@ -56,13 +56,13 @@ class HelpSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         cog_name = self.values[0]
         cog = self.bot.get_cog(cog_name)
-        
+
         if not cog:
             await interaction.response.send_message("Category not found.", ephemeral=True)
             return
 
         cat_info = next((c for c in HELP_CATEGORIES if c["value"] == cog_name), None)
-        emoji = cat_info["emoji"] if cat_info else "ℹ️"
+        emoji = cat_info["emoji"] if cat_info else "i\ufe0f"
         label = cat_info["label"] if cat_info else cog_name
 
         embed = discord.Embed(
@@ -113,6 +113,14 @@ class Utility(commands.Cog):
         self.bot = bot
         self._start_time = time.monotonic()
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        settings = await self.bot.get_guild_settings(ctx.guild.id)
+        if settings and settings.music_channel_id and ctx.channel.id != settings.music_channel_id:
+            from core.errors import WrongChannelError
+
+            raise WrongChannelError(settings.music_channel_id)
+        return True
+
     @commands.hybrid_command(name="help", description="Show bot commands in an interactive menu")
     @app_commands.describe(command="Specific command to get help for")
     @cooldown(1, 3.0)
@@ -131,13 +139,13 @@ class Utility(commands.Cog):
             )
             if cmd.aliases:
                 embed.add_field(name="Aliases", value=", ".join(f"`{a}`" for a in cmd.aliases))
-            
+
             if isinstance(cmd, commands.Group):
                 subcommands = [c for c in cmd.commands if not c.hidden]
                 if subcommands:
                     subcommand_names = ", ".join(f"`{c.name}`" for c in sorted(subcommands, key=lambda c: c.name))
                     embed.add_field(name="Subcommands", value=subcommand_names, inline=False)
-            
+
             usage = cmd.usage or cmd.signature
             if usage:
                 embed.add_field(name="Usage", value=f"`{ctx.prefix}{cmd.qualified_name} {usage}`")
@@ -155,7 +163,7 @@ class Utility(commands.Cog):
                         "*Use the dropdown menu below to explore commands by category.*",
             color=discord.Color.blurple(),
         )
-        
+
         # Add basic stats to make the landing page feel alive
         players = len(self.bot.players)
         embed.set_footer(text=f"Currently rocking out in {players} servers 🎸 | Select a category below!")
@@ -233,32 +241,27 @@ class Utility(commands.Cog):
             if player and player.current:
                 query = player.current.title
             else:
-                await ctx.send("Nothing playing and no query specified.", ephemeral=True)
+                await ctx.send("Nothing playing and no query specified.")
                 return
 
         await ctx.defer()
 
         try:
             from core.lyrics import fetch_lyrics
+            from core.ui.lyrics_paginator import LyricsPaginator
 
             lrc = await fetch_lyrics(query)
             if lrc:
-                # Truncate to embed limit
-                if len(lrc) > 4000:
-                    lrc = lrc[:4000] + "\n..."
-
-                embed = discord.Embed(
-                    title=f"Lyrics: {query[:100]}",
-                    description=lrc,
-                    color=discord.Color.blue(),
-                )
-                await ctx.send(embed=embed)
+                view = LyricsPaginator(query, lrc)
+                embed = view.build_embed()
+                # Store message in view for timeout
+                view.message = await ctx.send(embed=embed, view=view)
             else:
                 await ctx.send(f"No lyrics found for: {query}")
         except ImportError:
-            await ctx.send("Lyrics module not available.", ephemeral=True)
+            await ctx.send("Lyrics module not available.")
         except Exception as e:
-            await ctx.send(f"Error fetching lyrics: {e}", ephemeral=True)
+            await ctx.send(f"Error fetching lyrics: {e}")
 
     @commands.hybrid_command(name="history", description="Show recently played tracks")
     @cooldown(1, 5.0)

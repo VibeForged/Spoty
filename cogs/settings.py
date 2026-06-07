@@ -54,10 +54,42 @@ class Settings(commands.Cog):
         embed.add_field(name="Queue Locked", value=str(gs.queue_locked), inline=True)
         embed.add_field(
             name="Inactivity Timeout",
-            value=f"{gs.inactivity_timeout}s",
+            value=f"{gs.inactivity_timeout}s" if gs.inactivity_timeout > 0 else "24/7 Mode (Never)",
             inline=True,
         )
         await ctx.send(embed=embed)
+
+    @settings.command(name="247", description="Toggle 24/7 mode (stay in voice channel forever)")
+    @is_admin()
+    @cooldown(1, 5.0)
+    async def settings_247(self, ctx: commands.Context) -> None:
+        """Toggle 24/7 mode. When enabled, the bot will never leave the voice channel due to inactivity."""
+        from core.repositories import GuildSettingsRepo
+
+        gs = await self.bot.get_guild_settings(ctx.guild.id)
+        current = getattr(gs, "inactivity_timeout", 300)
+
+        if current <= 0:
+            # 24/7 is currently on, turn it off (default to 300s)
+            new_val = 300
+            msg = "24/7 mode **disabled**. The bot will now leave after 5 minutes of inactivity."
+        else:
+            # Turn 24/7 on (set timeout to 0)
+            new_val = 0
+            msg = "24/7 mode **enabled**. The bot will stay in the voice channel indefinitely."
+
+        await GuildSettingsRepo.update(ctx.guild.id, inactivity_timeout=new_val)
+        self.bot.invalidate_settings_cache(ctx.guild.id)
+
+        # Apply instantly to the active player if it exists
+        player = self.bot.get_player(ctx.guild.id)
+        if player:
+            if new_val == 0:
+                player._cancel_inactive_timer()
+            elif not player.is_playing:
+                player._start_inactive_timer()
+
+        await ctx.send(msg)
 
     @settings.command(name="default_volume", description="Set default playback volume")
     @app_commands.describe(volume="Default volume (0-100)")
@@ -145,19 +177,7 @@ class Settings(commands.Cog):
         self.bot.invalidate_settings_cache(ctx.guild.id)
         await ctx.send(f"DJ role set to {role.mention}")
 
-    @commands.hybrid_command(name="autoplay", description="Toggle Auto-DJ")
-    @is_dj()
-    @cooldown(1, 5.0)
-    async def autoplay(self, ctx: commands.Context) -> None:
-        """Toggle Auto-DJ (automatically plays related tracks when queue empties)."""
-        gs = await self.bot.get_guild_settings(ctx.guild.id)
-        new_value = not gs.autoplay
 
-        from core.repositories import GuildSettingsRepo
-
-        await GuildSettingsRepo.update(ctx.guild.id, autoplay=new_value)
-        self.bot.invalidate_settings_cache(ctx.guild.id)
-        await ctx.send(f"Auto-DJ **{'enabled' if new_value else 'disabled'}**")
 
     @commands.hybrid_command(name="lockqueue", description="Toggle queue lock")
     @is_dj()
@@ -273,6 +293,57 @@ class Settings(commands.Cog):
         else:
             count = await PermissionRepo.reset_all(ctx.guild.id)
             await ctx.send(f"Removed **{count}** permission override(s) for this server.")
+
+
+    @commands.hybrid_command(name="setup", description="Setup the dedicated music channel and control panel")
+    @is_admin()
+    @cooldown(1, 10.0)
+    async def setup_music(self, ctx: commands.Context) -> None:
+        """Create a dedicated #music-requests channel with a persistent control panel."""
+        await ctx.defer()
+
+        # Check if we already have one
+        from core.repositories import GuildSettingsRepo
+        gs = await self.bot.get_guild_settings(ctx.guild.id)
+
+        channel = None
+        if gs and gs.music_channel_id:
+            channel = ctx.guild.get_channel(gs.music_channel_id)
+
+        if not channel:
+            # Create a new channel
+            overwrites = {
+                ctx.guild.default_role: discord.PermissionOverwrite(send_messages=True),
+                ctx.guild.me: discord.PermissionOverwrite(send_messages=True, embed_links=True, read_message_history=True)
+            }
+            try:
+                channel = await ctx.guild.create_text_channel(
+                    name="music-requests",
+                    topic="Request songs here and use the control panel below!",
+                    overwrites=overwrites,
+                    reason="Spoty Music Bot Setup"
+                )
+            except discord.Forbidden:
+                await ctx.send("I don't have permission to create channels!", ephemeral=True)
+                return
+
+        from core.ui.player_control import PlayerControlPanel, build_panel_embed
+        player = self.bot.get_player(ctx.guild.id)
+
+        embed = build_panel_embed(player)
+        view = PlayerControlPanel(self.bot, ctx.guild.id)
+
+        # Clear the channel if it's new or just to clean it up (optional, let's just send)
+        msg = await channel.send(embed=embed, view=view)
+
+        await GuildSettingsRepo.update(
+            ctx.guild.id,
+            music_channel_id=channel.id,
+            panel_message_id=msg.id
+        )
+        self.bot.invalidate_settings_cache(ctx.guild.id)
+
+        await ctx.send(f"Setup complete! Head over to {channel.mention} to control the music.", ephemeral=True)
 
 
 async def setup(bot: MusicBot) -> None:

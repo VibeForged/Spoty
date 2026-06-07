@@ -30,7 +30,7 @@ jobs:
           pip install ruff pytest pytest-asyncio
 
       - name: Lint
-        run: ruff check launcher.py config.py tests/test_launcher.py
+        run: ruff check .
 
       - name: Test
         run: pytest --tb=short

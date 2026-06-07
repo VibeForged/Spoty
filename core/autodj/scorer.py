@@ -79,9 +79,8 @@ def score_candidates(candidates: list[ScoredTrack], context: SessionContext) -> 
             score += 0.1
 
         # Filter out very short tracks (< 30s) unless seed is also short
-        if candidate.track.duration and candidate.track.duration < 30:
-            if not seed_duration or seed_duration >= 60:
-                score -= 0.5
+        if candidate.track.duration and candidate.track.duration < 30 and (not seed_duration or seed_duration >= 60):
+            score -= 0.5
 
         # Filter out live streams
         if candidate.track.duration is None:

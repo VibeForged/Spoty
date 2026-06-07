@@ -36,7 +36,7 @@ class SearchFallbackSource(RecommendationSource):
         query = f"{keywords} music"
         logger.debug("SearchFallbackSource: searching '{}'", query[:60])
 
-        from core.extractor import extract_info, YDL_SEARCH_OPTS
+        from core.extractor import YDL_SEARCH_OPTS, extract_info
 
         try:
             # We must use YDL_SEARCH_OPTS to enforce flat extraction, otherwise it fetches all formats

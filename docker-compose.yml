@@ -21,7 +21,7 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/version || exit 1"]
+      test: ["CMD-SHELL", "curl -sf -H 'Authorization: youshallnotpass' http://localhost:8080/version || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

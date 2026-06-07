@@ -7,10 +7,9 @@ from typing import TYPE_CHECKING
 import discord
 from discord import app_commands
 from discord.ext import commands
-from loguru import logger
 
 from core.checks import cooldown, in_voice, is_dj
-from core.errors import BotNotConnected, NothingPlaying
+from core.errors import NothingPlayingError
 from core.extractor import search_track
 
 if TYPE_CHECKING:
@@ -43,7 +42,6 @@ class AutoDJ(commands.Cog):
         """
         await ctx.defer()
 
-        from core.player import MusicPlayer
         from core.repositories import GuildSettingsRepo, HistoryRepo
 
         guild_id = ctx.guild.id
@@ -61,17 +59,17 @@ class AutoDJ(commands.Cog):
                 await player.destroy()
 
             if not isinstance(ctx.author, discord.Member) or not ctx.author.voice:
-                from core.errors import NotInVoiceChannel
+                from core.errors import NotInVoiceChannelError
 
-                raise NotInVoiceChannel()
+                raise NotInVoiceChannelError()
 
             channel = ctx.author.voice.channel
-            from core.errors import VoiceConnectionFailed
+            from core.errors import VoiceConnectionFailedError
 
             try:
                 player = await self.bot.create_player(guild_id, channel, ctx.channel)
             except Exception as e:
-                raise VoiceConnectionFailed(str(e))
+                raise VoiceConnectionFailedError(str(e)) from e
 
         player.text_channel = ctx.channel
 
@@ -119,15 +117,14 @@ class AutoDJ(commands.Cog):
                 return
 
         # If nothing is currently playing, play the seed track first
-        if not player.is_playing and not player.is_paused:
-            if query and seed_track:
-                seed_track.requester_name = "Auto-DJ"
-                seed_track.requester_id = ctx.author.id
-                player.queue.add(seed_track)
-                await player.play_next()
+        if not player.is_playing and not player.is_paused and query and seed_track:
+            seed_track.requester_name = "Auto-DJ"
+            seed_track.requester_id = ctx.author.id
+            player.queue.add(seed_track)
+            await player.play_next()
 
         # Build session info
-        session = await self.bot.autodj_engine.get_or_create_session(guild_id, seed_track)
+        await self.bot.autodj_engine.get_or_create_session(guild_id, seed_track)
 
         embed = discord.Embed(
             title="🤖 Auto-DJ Started",
@@ -200,7 +197,7 @@ class AutoDJ(commands.Cog):
             embed.add_field(name="Completions", value=str(completions), inline=True)
 
             # Session age (use timezone-aware UTC)
-            from datetime import datetime, UTC
+            from datetime import UTC, datetime
 
             age_seconds = (datetime.now(UTC) - session.created_at).total_seconds()
             if age_seconds < 3600:
@@ -229,7 +226,7 @@ class AutoDJ(commands.Cog):
         """Skip the current track and tell Auto-DJ you didn't like it."""
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.current:
-            raise NothingPlaying()
+            raise NothingPlayingError()
 
         track = player.current
         # Record as skip signal (stronger than regular skip)

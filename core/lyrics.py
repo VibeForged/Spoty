@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 import aiohttp
 from loguru import logger
@@ -23,7 +22,7 @@ class LyricsProvider:
         title: str = "",
         album: str = "",
         duration: int | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Fetch lyrics from this provider. Return LRC format or None."""
         raise NotImplementedError
 
@@ -40,7 +39,7 @@ class LRCLibProvider(LyricsProvider):
         title: str = "",
         album: str = "",
         duration: int | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Search LRCLib API."""
         try:
             async with aiohttp.ClientSession() as session:
@@ -68,7 +67,7 @@ class LRCLibProvider(LyricsProvider):
                     if lyrics:
                         logger.info("Found lyrics on LRCLib via general search")
                         return lyrics
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.debug("LRCLib search timed out")
         except Exception as e:
             logger.debug("LRCLib search error: {}", e)
@@ -81,7 +80,7 @@ class LRCLibProvider(LyricsProvider):
         title: str,
         album: str,
         duration: int,
-    ) -> Optional[str]:
+    ) -> str | None:
         params = {
             "artist_name": artist,
             "track_name": title,
@@ -99,7 +98,7 @@ class LRCLibProvider(LyricsProvider):
                     return self._extract_lyrics(data)
                 if resp.status == 404:
                     return None
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise
         except Exception as e:
             logger.debug("LRCLib signature fetch error: {}", e)
@@ -112,7 +111,7 @@ class LRCLibProvider(LyricsProvider):
         track_name: str | None = None,
         artist_name: str | None = None,
         album_name: str | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         params: dict[str, str] = {}
         if q:
             params["q"] = q
@@ -139,14 +138,14 @@ class LRCLibProvider(LyricsProvider):
                             lyrics = self._extract_lyrics(record)
                             if lyrics:
                                 return lyrics
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise
         except Exception as e:
             logger.debug("LRCLib record search error: {}", e)
         return None
 
     @staticmethod
-    def _extract_lyrics(record: dict[str, object]) -> Optional[str]:
+    def _extract_lyrics(record: dict[str, object]) -> str | None:
         return (
             record.get("syncedLyrics")
             or record.get("plainLyrics")
@@ -164,11 +163,9 @@ class SyncedLyricsProvider(LyricsProvider):
         title: str = "",
         album: str = "",
         duration: int | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Use syncedlyrics with limited sources."""
         try:
-            import syncedlyrics
-
             # Reduce verbosity and timeouts
             import logging as std_logging
 
@@ -191,7 +188,7 @@ class SyncedLyricsProvider(LyricsProvider):
         return None
 
     @staticmethod
-    async def _syncedlyrics_search(query: str) -> Optional[str]:
+    async def _syncedlyrics_search(query: str) -> str | None:
         """Wrapper for syncedlyrics.search with error handling."""
         try:
             import syncedlyrics
@@ -219,7 +216,7 @@ class LyricsManager:
         title: str = "",
         album: str = "",
         duration: int | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Fetch lyrics from available providers in priority order.
 
         Args:
@@ -254,7 +251,7 @@ async def fetch_lyrics(
     title: str = "",
     album: str = "",
     duration: int | None = None,
-) -> Optional[str]:
+) -> str | None:
     """Fetch lyrics with optimized source priority.
 
     Args:

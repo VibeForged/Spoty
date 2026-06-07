@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.checks import cooldown, is_dj
-from core.errors import BotNotConnected, NothingPlaying, PresetNotFound
+from core.errors import BotNotConnectedError, NothingPlayingError, PresetNotFoundError
 from core.filters import (
     BUILTIN_PRESETS,
     PRESET_DESCRIPTIONS,
@@ -28,6 +28,14 @@ class FX(commands.Cog):
     def __init__(self, bot: MusicBot) -> None:
         self.bot = bot
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        settings = await self.bot.get_guild_settings(ctx.guild.id)
+        if settings and settings.music_channel_id and ctx.channel.id != settings.music_channel_id:
+            from core.errors import WrongChannelError
+
+            raise WrongChannelError(settings.music_channel_id)
+        return True
+
     @commands.hybrid_command(name="setfx", description="Apply an audio effect preset")
     @app_commands.describe(preset="Name of the preset to apply")
     @is_dj()
@@ -36,9 +44,9 @@ class FX(commands.Cog):
         """Apply a built-in or custom FX preset."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
         if not player.current:
-            raise NothingPlaying()
+            raise NothingPlayingError()
 
         preset_lower = preset.lower()
 
@@ -49,7 +57,7 @@ class FX(commands.Cog):
 
             custom = await FXPresetRepo.get_by_name(ctx.guild.id, preset_lower)
             if custom is None:
-                raise PresetNotFound(preset)
+                raise PresetNotFoundError(preset)
 
         # Warning for earrape etc
         if preset_lower in WARNING_PRESETS:
@@ -77,7 +85,7 @@ class FX(commands.Cog):
         """Remove all active audio effects."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         await player.apply_filters([])
         await ctx.send(
@@ -94,7 +102,7 @@ class FX(commands.Cog):
         """Show the currently active FX preset."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         if not player.active_filters:
             await ctx.send("No active effects.")
@@ -188,7 +196,7 @@ class FX(commands.Cog):
         if await FXPresetRepo.delete_preset(ctx.guild.id, name.lower()):
             await ctx.send(f"Deleted preset **{name}**")
         else:
-            raise PresetNotFound(name)
+            raise PresetNotFoundError(name)
 
     @fxpreset.command(name="rename", description="Rename a custom FX preset")
     @app_commands.describe(old_name="Current preset name", new_name="New preset name")
@@ -201,7 +209,7 @@ class FX(commands.Cog):
         if await FXPresetRepo.rename(ctx.guild.id, old_name.lower(), new_name.lower()):
             await ctx.send(f"Renamed preset **{old_name}** to **{new_name}**")
         else:
-            raise PresetNotFound(old_name)
+            raise PresetNotFoundError(old_name)
 
     @fxpreset.command(name="builder", description="Interactive FX preset builder")
     @is_dj()

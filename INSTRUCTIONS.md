@@ -211,7 +211,7 @@ spoty_discord_bot/
 │   ├── queue_cog.py        # queue, remove, clear, shuffle, loop, move
 │   ├── fx.py               # setfx, clearfx, currenteffects, fxpreset (create/delete/builder)
 │   ├── playlists.py        # playlist CRUD, import (YT/Spotify/share), like/dislike, copy, shuffle
-│   ├── settings.py         # settings view/edit, prefix, DJ role, autoplay, permissions
+│   ├── settings.py         # settings view/edit, prefix, DJ role, permissions
 │   ├── utility.py          # help, ping, botinfo, lyrics, history, stats, musicquiz, ambience
 │   └── dev.py              # Developer/owner-only commands (reload, sync, eval)
 │

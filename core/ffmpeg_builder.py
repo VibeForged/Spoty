@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 # Default FFmpeg options for Discord voice streaming
 FFMPEG_BEFORE_OPTIONS = (
     "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"

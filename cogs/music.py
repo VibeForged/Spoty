@@ -9,13 +9,13 @@ from discord import app_commands
 from discord.ext import commands
 from loguru import logger
 
-from core.checks import cooldown, in_voice
+from core.checks import cooldown, in_voice, is_dj
 from core.errors import (
-    BotNotConnected,
-    NothingPlaying,
-    QueueEmpty,
-    TrackNotFound,
-    VoiceConnectionFailed,
+    BotNotConnectedError,
+    NothingPlayingError,
+    QueueEmptyError,
+    TrackNotFoundError,
+    VoiceConnectionFailedError,
 )
 from core.extractor import search_track
 from core.player import MusicPlayer
@@ -33,6 +33,14 @@ class Music(commands.Cog):
     def __init__(self, bot: MusicBot) -> None:
         self.bot = bot
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        settings = await self.bot.get_guild_settings(ctx.guild.id)
+        if settings and settings.music_channel_id and ctx.channel.id != settings.music_channel_id:
+            from core.errors import WrongChannelError
+
+            raise WrongChannelError(settings.music_channel_id)
+        return True
+
     async def _get_or_create_player(
         self, ctx: commands.Context
     ) -> MusicPlayer:
@@ -49,15 +57,15 @@ class Music(commands.Cog):
 
         # User must be in a voice channel
         if not isinstance(ctx.author, discord.Member) or not ctx.author.voice:
-            from core.errors import NotInVoiceChannel
-            raise NotInVoiceChannel()
+            from core.errors import NotInVoiceChannelError
+            raise NotInVoiceChannelError()
 
         channel = ctx.author.voice.channel
 
         try:
             player = await self.bot.create_player(guild_id, channel, ctx.channel)
         except Exception as e:
-            raise VoiceConnectionFailed(str(e))
+            raise VoiceConnectionFailedError(str(e)) from e
 
         # Load guild default volume
         settings = await self.bot.get_guild_settings(guild_id)
@@ -77,79 +85,72 @@ class Music(commands.Cog):
         player.text_channel = ctx.channel
 
         # Search for the track
+        tracks = []
         if "spotify.com" in query:
-            import wavelink
-            try:
-                node = wavelink.Pool.get_node()
-                result = await wavelink.Playable.search(query, node=node)
-                playable = None
-                if hasattr(result, "tracks") and result.tracks:
-                    playable = result.tracks[0]
-                elif isinstance(result, list) and result:
-                    playable = result[0]
-                
-                if not playable:
-                    raise TrackNotFound(query)
-                    
+            from core.spotify import SpotifyScraper
+
+            _playlist_name, queries = await SpotifyScraper.extract_queries(query)
+            if not queries:
+                raise TrackNotFoundError(query)
+            for q in queries:
                 track = Track(
-                    title=playable.title,
-                    url=playable.uri or query,
-                    duration=playable.length // 1000 if playable.length else None,
+                    title=q,
+                    url=query,
                     source="spotify",
-                    thumbnail=getattr(playable, "artwork", None),
-                    stream_url=None
+                    lazy_query=q
                 )
-            except Exception as e:
-                logger.error("Spotify native search failed: {}", e)
-                raise TrackNotFound(query)
+                track.requester_id = ctx.author.id
+                track.requester_name = ctx.author.display_name
+                tracks.append(track)
         else:
             track = await search_track(query)
-            
-        if track is None:
-            raise TrackNotFound(query)
+            if track is None:
+                raise TrackNotFoundError(query)
+            track.requester_id = ctx.author.id
+            track.requester_name = ctx.author.display_name
+            tracks.append(track)
 
-        track.requester_id = ctx.author.id
-        track.requester_name = ctx.author.display_name
-
-        # If nothing is playing, play immediately
-        if not player.is_playing and not player.is_paused:
-            player.queue.add(track)
-            await player.play_next()
-
-            embed = discord.Embed(
-                title="Now Playing",
-                description=f"**[{track.title}]({track.url})**",
-                color=discord.Color.green(),
-            )
-            embed.add_field(name="Duration", value=track.duration_str, inline=True)
-            embed.add_field(name="Requested by", value=ctx.author.display_name, inline=True)
-            if track.thumbnail:
-                embed.set_thumbnail(url=track.thumbnail)
-
-            settings = await self.bot.get_guild_settings(ctx.guild.id)
-            view = NowPlayingView(player) if settings and settings.interactive_buttons else None
-            await ctx.send(embed=embed, view=view)
-        else:
-            # Add to queue
+        # Process tracks
+        for i, track in enumerate(tracks):
             position = player.queue.add(track)
 
-            embed = discord.Embed(
-                title="Added to Queue",
-                description=f"**[{track.title}]({track.url})**",
-                color=discord.Color.blue(),
-            )
-            embed.add_field(name="Position", value=str(position), inline=True)
-            embed.add_field(name="Duration", value=track.duration_str, inline=True)
-            embed.add_field(name="Requested by", value=ctx.author.display_name, inline=True)
-            await ctx.send(embed=embed)
+            # If nothing is playing and this is the first track, play immediately
+            if i == 0 and not player.is_playing and not player.is_paused:
+                await player.play_next()
+
+                embed = discord.Embed(
+                    title="Now Playing",
+                    description=f"**[{track.title}]({track.url})**",
+                    color=discord.Color.green(),
+                )
+                if track.duration_str != "0:00":
+                    embed.add_field(name="Duration", value=track.duration_str, inline=True)
+                embed.add_field(name="Requested by", value=ctx.author.display_name, inline=True)
+                if track.thumbnail:
+                    embed.set_thumbnail(url=track.thumbnail)
+
+                settings = await self.bot.get_guild_settings(ctx.guild.id)
+                view = NowPlayingView(player) if settings and settings.interactive_buttons else None
+                await ctx.send(embed=embed, view=view)
+            elif i == 0:
+                # Add to queue notification for the first track or single track
+                embed = discord.Embed(
+                    title="Added to Queue",
+                    description=f"**[{track.title}]({track.url})**" + (f" and {len(tracks)-1} more tracks" if len(tracks) > 1 else ""),
+                    color=discord.Color.blue(),
+                )
+                embed.add_field(name="Position", value=str(position), inline=True)
+                embed.add_field(name="Requested by", value=ctx.author.display_name, inline=True)
+                await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="skip", aliases=["s"], description="Skip the current track")
+    @is_dj()
     @cooldown(1, 2.0)
     async def skip(self, ctx: commands.Context) -> None:
         """Skip the current track."""
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.is_playing:
-            raise NothingPlaying()
+            raise NothingPlayingError()
 
         skipped = await player.skip()
         title = skipped.short_title if skipped else "Unknown"
@@ -162,12 +163,13 @@ class Music(commands.Cog):
         )
 
     @commands.hybrid_command(name="stop", description="Stop playback and clear the queue")
+    @is_dj()
     @cooldown(1, 3.0)
     async def stop(self, ctx: commands.Context) -> None:
         """Stop playback and clear the queue."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         await player.stop()
         await ctx.send(
@@ -179,12 +181,13 @@ class Music(commands.Cog):
         )
 
     @commands.hybrid_command(name="pause", description="Pause playback")
+    @is_dj()
     @cooldown(1, 2.0)
     async def pause(self, ctx: commands.Context) -> None:
         """Pause the current track."""
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.is_playing:
-            raise NothingPlaying()
+            raise NothingPlayingError()
 
         await player.pause()
         await ctx.send(
@@ -196,12 +199,13 @@ class Music(commands.Cog):
         )
 
     @commands.hybrid_command(name="resume", description="Resume playback")
+    @is_dj()
     @cooldown(1, 2.0)
     async def resume(self, ctx: commands.Context) -> None:
         """Resume paused playback."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
         if not player.is_paused:
             await ctx.send("Playback is not paused.", ephemeral=True)
             return
@@ -221,10 +225,10 @@ class Music(commands.Cog):
         """Show the current music queue."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         if player.queue.is_empty and not player.current:
-            raise QueueEmpty()
+            raise QueueEmptyError()
 
         paginator = QueuePaginator(player, page=page)
         embed = paginator.build_embed()
@@ -236,7 +240,7 @@ class Music(commands.Cog):
         """Show the currently playing track with interactive buttons."""
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.current:
-            raise NothingPlaying()
+            raise NothingPlayingError()
 
         track = player.current
         position = player.position_ms // 1000
@@ -271,6 +275,41 @@ class Music(commands.Cog):
         view = NowPlayingView(player) if settings and settings.interactive_buttons else None
         await ctx.send(embed=embed, view=view)
 
+    @commands.hybrid_command(name="panel", description="Re-summon the persistent player control panel")
+    @cooldown(1, 10.0)
+    async def panel(self, ctx: commands.Context) -> None:
+        """Summon the Player Control Panel to the bottom of the chat."""
+        from core.repositories import GuildSettingsRepo
+        from core.ui.player_control import PlayerControlPanel, build_panel_embed
+
+        settings = await self.bot.get_guild_settings(ctx.guild.id)
+        player = self.bot.get_player(ctx.guild.id)
+
+        # Try to delete the old panel message
+        if settings and settings.music_channel_id and settings.panel_message_id:
+            try:
+                channel = self.bot.get_channel(settings.music_channel_id)
+                if channel:
+                    old_msg = await channel.fetch_message(settings.panel_message_id)
+                    await old_msg.delete()
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                logger.warning(f"Could not delete old panel message: {e}")
+
+        # If no player exists, we'll still show the empty state panel
+        embed = build_panel_embed(player)
+        view = PlayerControlPanel(self.bot, ctx.guild.id)
+
+        msg = await ctx.send(embed=embed, view=view)
+
+        # Track this new panel message in the settings
+        await GuildSettingsRepo.update(
+            ctx.guild.id,
+            panel_message_id=msg.id
+        )
+        self.bot.invalidate_settings_cache(ctx.guild.id)
+
     @commands.hybrid_command(name="join", description="Join a voice channel")
     @in_voice()
     @cooldown(1, 3.0)
@@ -291,15 +330,16 @@ class Music(commands.Cog):
             player = await self.bot.create_player(ctx.guild.id, target, ctx.channel)
             await ctx.send(f"Joined **{target.name}** using **{player.backend_name}**")
         except Exception as e:
-            raise VoiceConnectionFailed(str(e))
+            raise VoiceConnectionFailedError(str(e)) from e
 
     @commands.hybrid_command(name="leave", aliases=["dc", "disconnect"], description="Leave the voice channel")
+    @is_dj()
     @cooldown(1, 3.0)
     async def leave(self, ctx: commands.Context) -> None:
         """Disconnect from the voice channel."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         await player.destroy()
         await ctx.send(
@@ -312,12 +352,13 @@ class Music(commands.Cog):
 
     @commands.hybrid_command(name="seek", description="Seek to a position in the current track")
     @app_commands.describe(position="Time to seek to (e.g., 1:30 or 90)")
+    @is_dj()
     @cooldown(1, 3.0)
     async def seek(self, ctx: commands.Context, *, position: str) -> None:
         """Seek to a position in the current track."""
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.current:
-            raise NothingPlaying()
+            raise NothingPlayingError()
 
         seconds = _parse_time(position)
         if seconds is None:
@@ -329,36 +370,39 @@ class Music(commands.Cog):
 
     @commands.hybrid_command(name="volume", aliases=["vol"], description="Set the playback volume")
     @app_commands.describe(level="Volume level (0-200)")
+    @is_dj()
     @cooldown(1, 2.0)
     async def volume(self, ctx: commands.Context, level: int) -> None:
         """Set the playback volume (0-200)."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         level = max(0, min(level, 200))
         await player.set_volume(level)
         await ctx.send(f"Volume set to **{level}%**")
 
     @commands.hybrid_command(name="replay", description="Restart the current track")
+    @is_dj()
     @cooldown(1, 3.0)
     async def replay(self, ctx: commands.Context) -> None:
         """Restart the current track from the beginning."""
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.current:
-            raise NothingPlaying()
+            raise NothingPlayingError()
 
         await player.seek(0)
         await ctx.send(f"Replaying **{player.current.short_title}**")
 
     @commands.hybrid_command(name="jump", description="Jump to a specific position in the queue")
     @app_commands.describe(position="Queue position to jump to (1-indexed)")
+    @is_dj()
     @cooldown(1, 3.0)
     async def jump(self, ctx: commands.Context, position: int) -> None:
         """Jump to a specific track in the queue."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         if position < 1 or position > player.queue.size:
             await ctx.send(f"Invalid position. Queue has {player.queue.size} tracks.", ephemeral=True)

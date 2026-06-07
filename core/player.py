@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
-from core.audio_backends import BackendUnavailable, BaseAudioBackend, LavalinkBackend
+from core.audio_backends import BackendUnavailableError, BaseAudioBackend, LavalinkBackend
 from core.filters import PresetDefinition, combine_preset_definitions, preset_requires_ffmpeg
 from core.queue import LoopMode, MusicQueue
 from core.track import Track
@@ -87,6 +87,10 @@ class MusicPlayer:
             return
 
         async with self._play_lock:
+            # If a concurrent play_next started playing before we got the lock, abort
+            if self.is_playing or self.is_paused:
+                return
+
             if error:
                 logger.error("Playback error in guild {}: {}", self.guild_id, error)
 
@@ -102,6 +106,18 @@ class MusicPlayer:
                 return
 
             self.current = next_track
+
+            if next_track.lazy_query:
+                from core.extractor import search_track
+                resolved = await search_track(next_track.lazy_query)
+                if resolved:
+                    next_track.url = resolved.url
+                    next_track.title = resolved.title
+                    next_track.duration = resolved.duration
+                    next_track.thumbnail = resolved.thumbnail
+                    next_track.stream_url = resolved.stream_url
+                next_track.lazy_query = None
+
             logger.info(
                 "Playing: {} in guild {} via {}",
                 next_track.title[:60],
@@ -113,7 +129,7 @@ class MusicPlayer:
                 await self._backend.play(next_track)
                 self._consecutive_failures = 0
                 await self._record_track_play(next_track)
-            except BackendUnavailable as exc:
+            except BackendUnavailableError as exc:
                 if await self._try_fallback(exc, next_track):
                     return
                 await self._handle_track_failure(next_track, exc)
@@ -122,6 +138,9 @@ class MusicPlayer:
                 await self._handle_track_failure(next_track, exc)
                 return
 
+            # Cancel any lingering wait task to prevent cascading skip loops
+            if self._play_task and not self._play_task.done():
+                self._play_task.cancel()
             self._play_task = asyncio.create_task(self._wait_and_play_next())
 
             # Pre-emptive Auto-DJ: start filling queue when it's getting low
@@ -213,7 +232,7 @@ class MusicPlayer:
             return
         try:
             await getattr(self._backend, method_name)(*args)
-        except BackendUnavailable as exc:
+        except BackendUnavailableError as exc:
             await self._switch_to_ffmpeg(str(exc), resume_position_ms=self.position_ms)
             await getattr(self._backend, method_name)(*args)
 
@@ -333,7 +352,30 @@ class MusicPlayer:
         await self.play_next()
 
     async def _send_now_playing(self) -> None:
-        if not self.text_channel or not self.current:
+        if not self.current:
+            return
+
+        settings = await self.bot.get_guild_settings(self.guild_id)
+        if not settings:
+            return
+
+        from core.ui.player_control import PlayerControlPanel, build_panel_embed
+
+        if settings.music_channel_id and settings.panel_message_id:
+            channel = self.bot.get_channel(settings.music_channel_id)
+            if channel:
+                try:
+                    msg = await channel.fetch_message(settings.panel_message_id)
+                    embed = build_panel_embed(self)
+                    view = PlayerControlPanel(self.bot, self.guild_id)
+                    await msg.edit(embed=embed, view=view)
+                    return
+                except (discord.NotFound, discord.Forbidden):
+                    # Message deleted or access denied; fallback
+                    pass
+
+        # Fallback
+        if not self.text_channel:
             return
 
         track = self.current
@@ -349,7 +391,9 @@ class MusicPlayer:
         if track.thumbnail:
             embed.set_thumbnail(url=track.thumbnail)
 
-        await self.text_channel.send(embed=embed)
+        from core.ui.now_playing import NowPlayingView
+        view = NowPlayingView(self) if settings.interactive_buttons else None
+        await self.text_channel.send(embed=embed, view=view)
 
     async def _try_auto_dj(self) -> bool:
         """Attempt to fill the queue via the Auto-DJ recommendation engine.
@@ -467,16 +511,17 @@ class MusicPlayer:
 
     def _start_inactive_timer(self) -> None:
         self._cancel_inactive_timer()
-        timeout = 300
-        self._inactive_task = asyncio.create_task(self._inactive_disconnect(timeout))
+        self._inactive_task = asyncio.create_task(self._inactive_disconnect_wrapper())
 
-    def _cancel_inactive_timer(self) -> None:
-        if self._inactive_task and not self._inactive_task.done():
-            self._inactive_task.cancel()
-            self._inactive_task = None
-
-    async def _inactive_disconnect(self, timeout: int) -> None:
+    async def _inactive_disconnect_wrapper(self) -> None:
         try:
+            settings = await self.bot.get_guild_settings(self.guild_id)
+            timeout = settings.inactivity_timeout if settings else 300
+
+            if timeout <= 0:
+                # 24/7 mode enabled
+                return
+
             await asyncio.sleep(timeout)
             if not self._destroyed and not self.is_playing:
                 logger.info("Inactivity timeout for guild {}, disconnecting", self.guild_id)
@@ -485,6 +530,11 @@ class MusicPlayer:
             pass
         except Exception:
             logger.debug("Error in inactive disconnect", exc_info=True)
+
+    def _cancel_inactive_timer(self) -> None:
+        if self._inactive_task and not self._inactive_task.done():
+            self._inactive_task.cancel()
+            self._inactive_task = None
 
     async def destroy(self) -> None:
         if self._destroyed:

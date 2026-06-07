@@ -1,0 +1,15 @@
+.venv/
+.git/
+.github/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+build/
+dist/
+data/
+logs/
+.env
+.env.*
+*.spec
+*.db
+*.db-journal

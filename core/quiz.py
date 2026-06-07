@@ -7,11 +7,11 @@ import random
 from typing import TYPE_CHECKING
 
 import discord
-from loguru import logger
 
 if TYPE_CHECKING:
-    from bot import MusicBot
     from discord.ext.commands import Context
+
+    from bot import MusicBot
 
 
 class MusicQuiz:
@@ -94,7 +94,7 @@ class MusicQuiz:
             msg = await self.bot.wait_for("message", check=check, timeout=self.timeout)
             self.scores[msg.author.id] = self.scores.get(msg.author.id, 0) + 1
             await self.ctx.send(f"Correct! {msg.author.mention} got it! The answer was: **{title}**")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await self.ctx.send(f"Time's up! The answer was: **{title}**")
 
     @staticmethod

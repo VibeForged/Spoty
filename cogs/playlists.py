@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import random
-import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -13,7 +11,7 @@ from discord.ext import commands
 from loguru import logger
 
 from core.checks import cooldown
-from core.errors import InvalidPlaylistPosition, PlaylistNotFound, TrackNotFound
+from core.errors import InvalidPlaylistPositionError, PlaylistNotFoundError, TrackNotFoundError
 from core.playlists.service import MAX_IMPORT_ITEMS, PlaylistService
 from core.ui.playlist_paginator import PlaylistPaginator, build_playlist_embed
 
@@ -21,11 +19,35 @@ if TYPE_CHECKING:
     from bot import MusicBot
 
 
+async def playlist_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    if not interaction.guild_id:
+        return []
+    playlists = await PlaylistService.list_user_playlists(interaction.guild_id, interaction.user.id)
+    choices = []
+    current_lower = current.lower()
+    for playlist in playlists:
+        if current_lower in playlist.name.lower():
+            choices.append(app_commands.Choice(name=playlist.name, value=playlist.name))
+        if len(choices) >= 25:
+            break
+    return choices
+
+
 class Playlists(commands.Cog):
     """Playlist management commands."""
 
     def __init__(self, bot: MusicBot) -> None:
         self.bot = bot
+
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        settings = await self.bot.get_guild_settings(ctx.guild.id)
+        if settings and settings.music_channel_id and ctx.channel.id != settings.music_channel_id:
+            from core.errors import WrongChannelError
+
+            raise WrongChannelError(settings.music_channel_id)
+        return True
 
     @commands.hybrid_group(name="playlist", aliases=["pl"], description="Manage playlists")
     async def playlist(self, ctx: commands.Context) -> None:
@@ -49,6 +71,7 @@ class Playlists(commands.Cog):
 
     @playlist.command(name="delete", description="Delete a playlist")
     @app_commands.describe(name="Name of the playlist to delete")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 5.0)
     async def playlist_delete(self, ctx: commands.Context, *, name: str) -> None:
         """Delete a playlist you own."""
@@ -57,6 +80,7 @@ class Playlists(commands.Cog):
 
     @playlist.command(name="add", description="Add a track to a playlist")
     @app_commands.describe(name="Playlist name", query="Song name or URL")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 3.0)
     async def playlist_add(self, ctx: commands.Context, name: str, *, query: str) -> None:
         """Add a track to one of your playlists."""
@@ -65,7 +89,7 @@ class Playlists(commands.Cog):
         await ctx.defer()
         track = await search_track(query)
         if not track:
-            raise TrackNotFound(query)
+            raise TrackNotFoundError(query)
 
         position = await PlaylistService.add_item(
             ctx.guild.id,
@@ -77,6 +101,7 @@ class Playlists(commands.Cog):
 
     @playlist.command(name="remove", description="Remove a track from a playlist")
     @app_commands.describe(name="Playlist name", position="Track position (1-indexed)")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 3.0)
     async def playlist_remove(self, ctx: commands.Context, name: str, position: int) -> None:
         """Remove a track from your playlist at a given position."""
@@ -94,12 +119,14 @@ class Playlists(commands.Cog):
 
         embed = discord.Embed(title="Your Playlists", color=discord.Color.blue())
         embed.description = "\n".join(
-            f"**{playlist.name}** - {playlist.track_count} tracks" for playlist in playlists
+            f"**{i+1}. {playlist.name}** - {playlist.track_count} tracks"
+            for i, playlist in enumerate(playlists)
         )
         await ctx.send(embed=embed)
 
-    @playlist.command(name="view", description="View tracks in a playlist")
-    @app_commands.describe(name="Playlist name", page="Page number")
+    @playlist.command(name="view", description="View contents of a playlist")
+    @app_commands.describe(name="Playlist name")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 3.0)
     async def playlist_view(
         self, ctx: commands.Context, name: str, page: int = 1
@@ -118,8 +145,9 @@ class Playlists(commands.Cog):
         view._sync_controls()
         await ctx.send(embed=build_playlist_embed(detail), view=view)
 
-    @playlist.command(name="play", description="Load a playlist into the queue")
-    @app_commands.describe(name="Playlist name", shuffle="Shuffle before loading")
+    @playlist.command(name="play", description="Queue a playlist")
+    @app_commands.describe(name="Playlist name", shuffle="Shuffle the playlist before queueing")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 5.0)
     async def playlist_play(self, ctx: commands.Context, name: str, shuffle: bool = False) -> None:
         """Load all tracks from a playlist into the queue."""
@@ -166,9 +194,10 @@ class Playlists(commands.Cog):
             )
         )
 
-    @playlist.command(name="share", description="Generate a share code for a playlist")
+    @playlist.command(name="share", description="Share a playlist")
     @app_commands.describe(name="Playlist name")
-    @cooldown(1, 10.0)
+    @app_commands.autocomplete(name=playlist_autocomplete)
+    @cooldown(1, 5.0)
     async def playlist_share(self, ctx: commands.Context, *, name: str) -> None:
         """Generate a shareable code for your playlist."""
         code = await PlaylistService.generate_share_code(ctx.guild.id, ctx.author.id, name)
@@ -185,6 +214,7 @@ class Playlists(commands.Cog):
 
     @playlist.command(name="rename", description="Rename a playlist")
     @app_commands.describe(old_name="Current name", new_name="New name")
+    @app_commands.autocomplete(old_name=playlist_autocomplete)
     @cooldown(1, 5.0)
     async def playlist_rename(self, ctx: commands.Context, old_name: str, new_name: str) -> None:
         """Rename one of your playlists."""
@@ -193,8 +223,9 @@ class Playlists(commands.Cog):
         )
         await ctx.send(f"Renamed **{old_name}** to **{final_name}**")
 
-    @playlist.command(name="info", description="Show playlist metadata")
+    @playlist.command(name="info", description="Get playlist details")
     @app_commands.describe(name="Playlist name")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 3.0)
     async def playlist_info(self, ctx: commands.Context, *, name: str) -> None:
         """Show metadata for a playlist."""
@@ -238,7 +269,7 @@ class Playlists(commands.Cog):
                 playlist = await PlaylistService.import_share_code(
                     ctx.guild.id, ctx.author.id, source
                 )
-            except PlaylistNotFound:
+            except PlaylistNotFoundError:
                 playlist = None
             if playlist is not None:
                 await ctx.send(
@@ -254,38 +285,21 @@ class Playlists(commands.Cog):
                 return
 
         if "spotify.com" in source:
-            import wavelink
-            try:
-                node = wavelink.Pool.get_node()
-                result = await wavelink.Playable.search(source, node=node)
-            except Exception as e:
-                logger.error("Spotify native import failed: {}", e)
-                await ctx.send("Failed to search Spotify.", ephemeral=True)
+            from core.spotify import SpotifyScraper
+            playlist_name, queries = await SpotifyScraper.extract_queries(source)
+            if not queries:
+                await ctx.send("Failed to search Spotify or no tracks found.", ephemeral=True)
                 return
 
-            tracks = []
-            name = "Imported Spotify Playlist"
-            if isinstance(result, wavelink.Playlist):
-                name = result.name
-                tracks = result.tracks
-            elif isinstance(result, list) and result:
-                tracks = result
-            elif hasattr(result, "tracks") and result.tracks:
-                if hasattr(result, "name"):
-                    name = getattr(result, "name")
-                tracks = result.tracks
-
-            if not tracks:
-                await ctx.send("No tracks found in that Spotify URL.", ephemeral=True)
-                return
-
+            name = playlist_name or "Imported Spotify Playlist"
             track_dicts = []
-            for t in tracks[:MAX_IMPORT_ITEMS]:
+            for q in queries[:MAX_IMPORT_ITEMS]:
                 track_dicts.append({
-                    "title": t.title,
-                    "url": t.uri or source,
-                    "duration": t.length // 1000 if t.length else None,
+                    "title": q,
+                    "url": source,
+                    "duration": None,
                     "source": "spotify",
+                    "external_id": q
                 })
 
             playlist = await PlaylistService.import_items(
@@ -324,15 +338,17 @@ class Playlists(commands.Cog):
             )
         )
 
-    @playlist.command(name="like", description="Upvote a track in a playlist")
-    @app_commands.describe(name="Playlist name", position="Track position")
+    @playlist.command(name="like", description="Like a track in a playlist")
+    @app_commands.describe(name="Playlist name", position="Track position (1-indexed)")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 3.0)
     async def playlist_like(self, ctx: commands.Context, name: str, position: int) -> None:
         """Upvote a track in a playlist."""
         await self._vote(ctx, name, position, 1)
 
-    @playlist.command(name="dislike", description="Downvote a track in a playlist")
-    @app_commands.describe(name="Playlist name", position="Track position")
+    @playlist.command(name="dislike", description="Dislike a track in a playlist")
+    @app_commands.describe(name="Playlist name", position="Track position (1-indexed)")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 3.0)
     async def playlist_dislike(self, ctx: commands.Context, name: str, position: int) -> None:
         """Downvote a track in a playlist."""
@@ -350,7 +366,7 @@ class Playlists(commands.Cog):
                 ctx.author.id,
                 vote,
             )
-        except InvalidPlaylistPosition:
+        except InvalidPlaylistPositionError:
             await ctx.send(f"No track at position {position}.", ephemeral=True)
             return
 
@@ -362,8 +378,9 @@ class Playlists(commands.Cog):
             )
         )
 
-    @playlist.command(name="copy", description="Copy a playlist")
-    @app_commands.describe(source="Source playlist name or share code", new_name="New playlist name")
+    @playlist.command(name="copy", description="Copy a shared playlist")
+    @app_commands.describe(source="Share code, URL, or your playlist name", new_name="New playlist name")
+    @app_commands.autocomplete(source=playlist_autocomplete)
     @cooldown(1, 5.0)
     async def playlist_copy(self, ctx: commands.Context, source: str, new_name: str) -> None:
         """Copy a playlist (own or shared) to a new name."""
@@ -381,8 +398,9 @@ class Playlists(commands.Cog):
             )
         )
 
-    @playlist.command(name="shuffle", description="Permanently shuffle playlist track order")
+    @playlist.command(name="shuffle", description="Shuffle your playlist")
     @app_commands.describe(name="Playlist name")
+    @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 5.0)
     async def playlist_shuffle(self, ctx: commands.Context, *, name: str) -> None:
         """Permanently shuffle the stored order of a playlist."""

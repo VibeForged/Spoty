@@ -53,9 +53,8 @@ async def get_user_tier(
         return Tier.ADMIN
 
     # DJ role check
-    if dj_role_id is not None:
-        if any(role.id == dj_role_id for role in member.roles):
-            return Tier.DJ
+    if dj_role_id is not None and any(role.id == dj_role_id for role in member.roles):
+        return Tier.DJ
 
     # Lone-user bypass: if user is alone in VC with the bot, treat as DJ
     if member.voice and member.voice.channel:
