@@ -100,7 +100,7 @@ if (Test-Path $AppDir) {
     }
 }
 
-pyinstaller `
+python -m PyInstaller `
     --noconfirm `
     --clean `
     --onedir `
@@ -112,6 +112,10 @@ pyinstaller `
     --add-data "$Root\LavaLink;Lavalink" `
     --add-data "$Root\alembic;alembic" `
     (Join-Path $Root "launcher.py")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller failed with exit code $LASTEXITCODE. Please check the logs."
+}
 
 $RuntimeDir = Join-Path $AppDir "runtime"
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null

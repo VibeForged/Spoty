@@ -31,7 +31,7 @@ fi
 
 rm -rf "$APP_DIR"
 
-pyinstaller \
+python -m PyInstaller \
   --noconfirm \
   --clean \
   --onedir \
@@ -43,6 +43,11 @@ pyinstaller \
   --add-data "$ROOT/LavaLink:Lavalink" \
   --add-data "$ROOT/alembic:alembic" \
   "$ROOT/launcher.py"
+
+if [ $? -ne 0 ]; then
+  echo "PyInstaller failed!" >&2
+  exit 1
+fi
 
 mv "$DIST_DIR/spoty" "$APP_DIR"
 mkdir -p "$APP_DIR/runtime"
