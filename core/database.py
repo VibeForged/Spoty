@@ -100,6 +100,18 @@ async def _run_schema_upgrades(conn) -> None:
         logger.info("Applying schema upgrade: {}", statement)
         await conn.execute(text(statement))
 
+    # Check guild_settings table
+    guild_settings_columns = await conn.run_sync(
+        lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("guild_settings")}
+    )
+    if "panel_message_id" not in guild_settings_columns:
+        if dialect == "postgresql":
+            upgrade_stmt = "ALTER TABLE guild_settings ADD COLUMN panel_message_id BIGINT"
+        else:
+            upgrade_stmt = "ALTER TABLE guild_settings ADD COLUMN panel_message_id INTEGER"
+        logger.info("Applying schema upgrade: {}", upgrade_stmt)
+        await conn.execute(text(upgrade_stmt))
+
 
 async def close_db() -> None:
     """Close the database engine."""
