@@ -348,3 +348,4 @@ class Settings(commands.Cog):
 
 async def setup(bot: MusicBot) -> None:
     await bot.add_cog(Settings(bot))
+
