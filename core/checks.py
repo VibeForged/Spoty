@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import functools
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, TypeVar
 
 import discord
 from discord.ext import commands
 
 from core.errors import (
-    AdminRequired,
-    BotNotConnected,
-    DifferentVoiceChannel,
-    DJRequired,
-    NotInVoiceChannel,
+    AdminRequiredError,
+    BotNotConnectedError,
+    DifferentVoiceChannelError,
+    DJRequiredError,
+    NotInVoiceChannelError,
+    WrongChannelError,
 )
 from core.permissions import Tier, check_command_permission, check_tier, get_user_tier
 
@@ -23,12 +24,25 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
+def in_music_channel() -> Callable:
+    """Check that the command is used in the configured music channel, if any."""
+
+    async def predicate(ctx: commands.Context) -> bool:
+        if hasattr(ctx.bot, "get_guild_settings"):
+            settings = await ctx.bot.get_guild_settings(ctx.guild.id)
+            if settings and settings.music_channel_id and ctx.channel.id != settings.music_channel_id:
+                raise WrongChannelError(settings.music_channel_id)
+        return True
+
+    return commands.check(predicate)
+
+
 def in_voice() -> Callable:
     """Check that the user is in a voice channel."""
 
     async def predicate(ctx: commands.Context) -> bool:
         if not isinstance(ctx.author, discord.Member) or not ctx.author.voice:
-            raise NotInVoiceChannel()
+            raise NotInVoiceChannelError()
         return True
 
     return commands.check(predicate)
@@ -39,7 +53,7 @@ def bot_connected() -> Callable:
 
     async def predicate(ctx: commands.Context) -> bool:
         if not ctx.voice_client or not ctx.voice_client.is_connected():
-            raise BotNotConnected()
+            raise BotNotConnectedError()
         return True
 
     return commands.check(predicate)
@@ -50,11 +64,11 @@ def same_channel() -> Callable:
 
     async def predicate(ctx: commands.Context) -> bool:
         if not isinstance(ctx.author, discord.Member) or not ctx.author.voice:
-            raise NotInVoiceChannel()
+            raise NotInVoiceChannelError()
         if not ctx.voice_client or not ctx.voice_client.is_connected():
-            raise BotNotConnected()
+            raise BotNotConnectedError()
         if ctx.author.voice.channel != ctx.voice_client.channel:
-            raise DifferentVoiceChannel()
+            raise DifferentVoiceChannelError()
         return True
 
     return commands.check(predicate)
@@ -69,7 +83,7 @@ def is_dj() -> Callable:
         if override is True:
             return True
         if override is False:
-            raise DJRequired()
+            raise DJRequiredError()
 
         # Get DJ role from guild settings
         dj_role_id = None
@@ -80,7 +94,7 @@ def is_dj() -> Callable:
 
         tier = await get_user_tier(ctx, dj_role_id)
         if not check_tier(tier, Tier.DJ):
-            raise DJRequired()
+            raise DJRequiredError()
         return True
 
     return commands.check(predicate)
@@ -95,11 +109,11 @@ def is_admin() -> Callable:
         if override is True:
             return True
         if override is False:
-            raise AdminRequired()
+            raise AdminRequiredError()
 
         tier = await get_user_tier(ctx)
         if not check_tier(tier, Tier.ADMIN):
-            raise AdminRequired()
+            raise AdminRequiredError()
         return True
 
     return commands.check(predicate)

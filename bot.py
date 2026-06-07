@@ -5,7 +5,6 @@ Loads configuration, initializes the database, loads all cogs, and starts the bo
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -225,17 +224,16 @@ class MusicBot(commands.Bot):
             )
             return
 
-        if isinstance(error, commands.CheckFailure):
-            if isinstance(error, MusicBotError):
-                await ctx.send(
-                    embed=discord.Embed(
-                        title="Error",
-                        description=error.message,
-                        color=discord.Color.red(),
-                    ),
-                    delete_after=10,
-                )
-                return
+        if isinstance(error, commands.CheckFailure) and isinstance(error, MusicBotError):
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Error",
+                    description=error.message,
+                    color=discord.Color.red(),
+                ),
+                delete_after=10,
+            )
+            return
 
         # Unwrap CommandInvokeError
         original = getattr(error, "original", error)

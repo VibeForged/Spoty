@@ -9,7 +9,7 @@ import discord
 import wavelink
 from loguru import logger
 
-from core.audio_backends import BackendUnavailable, FFmpegBackend, LavalinkBackend
+from core.audio_backends import BackendUnavailableError, FFmpegBackend, LavalinkBackend
 
 if TYPE_CHECKING:
     from bot import MusicBot
@@ -94,7 +94,7 @@ class BackendManager:
         """Return the configured Lavalink node when available."""
         self.refresh_lavalink_state()
         if not self.lavalink_ready:
-            raise BackendUnavailable(self.last_lavalink_error or "Lavalink is not ready")
+            raise BackendUnavailableError(self.last_lavalink_error or "Lavalink is not ready")
         return wavelink.Pool.get_node(self._lavalink_node_identifier)
 
     def refresh_lavalink_state(self) -> bool:
@@ -126,7 +126,7 @@ class BackendManager:
                             " (authentication rejected; check LAVALINK_PASSWORD and the "
                             "server's application.yml password)"
                         )
-                    raise BackendUnavailable(
+                    raise BackendUnavailableError(
                         f"Lavalink /version probe failed with HTTP {response.status} at {uri}{detail}"
                     )
             async with session.get(f"{uri}/v4/info", headers=headers) as response:
@@ -137,7 +137,7 @@ class BackendManager:
                             " (authentication rejected; check LAVALINK_PASSWORD and the "
                             "server's application.yml password)"
                         )
-                    raise BackendUnavailable(
+                    raise BackendUnavailableError(
                         f"Lavalink /v4/info probe failed with HTTP {response.status} at {uri}{detail}"
                     )
 

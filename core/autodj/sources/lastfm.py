@@ -130,12 +130,11 @@ class LastFmSource(RecommendationSource):
         """Make an HTTP GET request to the Last.fm API."""
         url = "https://ws.audioscrobbler.com/2.0/"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    if resp.status != 200:
-                        logger.debug("Last.fm API returned status {}", resp.status)
-                        return []
-                    data = await resp.json()
+            async with aiohttp.ClientSession() as session, session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    logger.debug("Last.fm API returned status {}", resp.status)
+                    return []
+                data = await resp.json()
 
             # Navigate the nested response
             result = data
@@ -173,7 +172,7 @@ class LastFmSource(RecommendationSource):
 
             # Build a YouTube search query — Last.fm doesn't give us URLs
             search_title = f"{artist_name} - {name}" if artist_name else name
-            search_url = f"https://www.youtube.com/results?search_query={search_title.replace(' ', '+')}"
+            f"https://www.youtube.com/results?search_query={search_title.replace(' ', '+')}"
 
             # Duration from Last.fm (in ms or seconds depending on endpoint)
             duration = None

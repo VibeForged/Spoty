@@ -78,23 +78,23 @@ class MusicQueue:
     def add(self, track: Track) -> int:
         """Add a track to the end of the queue. Returns the position."""
         if self.is_full:
-            from core.errors import QueueFull
-            raise QueueFull(self._max_size)
+            from core.errors import QueueFullError
+            raise QueueFullError(self._max_size)
         self._tracks.append(track)
         return len(self._tracks)
 
     def add_top(self, track: Track) -> None:
         """Insert a track at the front of the queue (position 1)."""
         if self.is_full:
-            from core.errors import QueueFull
-            raise QueueFull(self._max_size)
+            from core.errors import QueueFullError
+            raise QueueFullError(self._max_size)
         self._tracks.appendleft(track)
 
     def add_at(self, position: int, track: Track) -> None:
         """Insert a track at a specific position (0-indexed)."""
         if self.is_full:
-            from core.errors import QueueFull
-            raise QueueFull(self._max_size)
+            from core.errors import QueueFullError
+            raise QueueFullError(self._max_size)
         position = max(0, min(position, len(self._tracks)))
         self._tracks.insert(position, track)
 

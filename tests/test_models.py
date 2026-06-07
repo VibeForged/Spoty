@@ -41,11 +41,11 @@ class TestModelRelationships:
 
     async def test_unique_playlist_name_key_per_user_guild(self, db):
         """Playlist names are unique per user+guild case-insensitively."""
-        from core.errors import PlaylistAlreadyExists
+        from core.errors import PlaylistAlreadyExistsError
         from core.playlists.service import PlaylistService
 
         await PlaylistService.create_playlist(1, 100, "Unique")
-        with pytest.raises(PlaylistAlreadyExists):
+        with pytest.raises(PlaylistAlreadyExistsError):
             await PlaylistService.create_playlist(1, 100, " unique ")
 
     async def test_playlist_name_spaces_become_underscores(self, db):

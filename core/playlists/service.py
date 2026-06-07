@@ -14,12 +14,12 @@ from sqlalchemy.exc import IntegrityError
 
 from core.database import get_session
 from core.errors import (
-    InvalidPlaylistName,
-    InvalidPlaylistPosition,
-    PlaylistAccessDenied,
-    PlaylistAlreadyExists,
-    PlaylistLimitExceeded,
-    PlaylistNotFound,
+    InvalidPlaylistNameError,
+    InvalidPlaylistPositionError,
+    PlaylistAccessDeniedError,
+    PlaylistAlreadyExistsError,
+    PlaylistLimitExceededError,
+    PlaylistNotFoundError,
 )
 from core.models import Playlist, PlaylistItem
 from core.playlists.repository import (
@@ -74,9 +74,9 @@ class PlaylistService:
     def normalize_name(name: str) -> tuple[str, str]:
         normalized = "_".join(name.strip().split())
         if not normalized:
-            raise InvalidPlaylistName()
+            raise InvalidPlaylistNameError()
         if len(normalized) > 100:
-            raise InvalidPlaylistName("Playlist name must be 100 characters or fewer.")
+            raise InvalidPlaylistNameError("Playlist name must be 100 characters or fewer.")
         return normalized, normalized.casefold()
 
     @staticmethod
@@ -96,19 +96,19 @@ class PlaylistService:
         title = str(data.get("title") or "").strip()
         url = str(data.get("url") or "").strip()
         if not title:
-            raise InvalidPlaylistName("Track title is required.")
+            raise InvalidPlaylistNameError("Track title is required.")
         if not url:
-            raise InvalidPlaylistName("Track URL is required.")
+            raise InvalidPlaylistNameError("Track URL is required.")
         if len(title) > 300:
             title = title[:300]
         if len(url) > 1000:
-            raise InvalidPlaylistName("Track URL must be 1000 characters or fewer.")
+            raise InvalidPlaylistNameError("Track URL must be 1000 characters or fewer.")
 
         duration = data.get("duration")
         if duration is not None:
             duration = int(duration)
             if duration < 0:
-                raise InvalidPlaylistName("Track duration cannot be negative.")
+                raise InvalidPlaylistNameError("Track duration cannot be negative.")
 
         source = str(data.get("source") or "unknown").lower()
         if source not in ALLOWED_SOURCES:
@@ -139,12 +139,12 @@ class PlaylistService:
                 session, guild_id, owner_id, name_key
             )
             if existing:
-                raise PlaylistAlreadyExists(name)
+                raise PlaylistAlreadyExistsError(name)
             try:
                 return await PlaylistRepository.create(session, guild_id, owner_id, name, name_key)
             except IntegrityError as exc:
                 logger.warning("Playlist create integrity failure: {}", exc)
-                raise PlaylistAlreadyExists(name) from exc
+                raise PlaylistAlreadyExistsError(name) from exc
 
     @staticmethod
     async def delete_playlist(guild_id: int, owner_id: int, name: str) -> None:
@@ -163,12 +163,12 @@ class PlaylistService:
                 session, guild_id, owner_id, new_key
             )
             if existing and existing.id != playlist.id:
-                raise PlaylistAlreadyExists(new_name)
+                raise PlaylistAlreadyExistsError(new_name)
             try:
                 await PlaylistRepository.rename(session, playlist.id, new_name, new_key)
             except IntegrityError as exc:
                 logger.warning("Playlist rename integrity failure: {}", exc)
-                raise PlaylistAlreadyExists(new_name) from exc
+                raise PlaylistAlreadyExistsError(new_name) from exc
         return new_name
 
     @staticmethod
@@ -212,7 +212,7 @@ class PlaylistService:
         async with get_session() as session:
             playlist = await PlaylistService._get_owned_playlist(session, guild_id, owner_id, name)
             if playlist.track_count >= MAX_PLAYLIST_ITEMS:
-                raise PlaylistLimitExceeded(MAX_PLAYLIST_ITEMS)
+                raise PlaylistLimitExceededError(MAX_PLAYLIST_ITEMS)
 
             position = await PlaylistItemRepository.max_position(session, playlist.id) + 1
             await PlaylistItemRepository.add_item(
@@ -233,7 +233,7 @@ class PlaylistService:
     @staticmethod
     async def remove_item(guild_id: int, owner_id: int, name: str, position: int) -> None:
         if position < 1:
-            raise InvalidPlaylistPosition(position)
+            raise InvalidPlaylistPositionError(position)
 
         async with get_session() as session:
             playlist = await PlaylistService._get_owned_playlist(session, guild_id, owner_id, name)
@@ -241,7 +241,7 @@ class PlaylistService:
                 session, playlist.id, position
             )
             if not removed:
-                raise InvalidPlaylistPosition(position)
+                raise InvalidPlaylistPositionError(position)
             await PlaylistRepository.increment_track_count(session, playlist.id, -1)
 
     @staticmethod
@@ -306,7 +306,7 @@ class PlaylistService:
         async with get_session() as session:
             source = await PlaylistRepository.get_by_share_code(session, share_code)
             if source is None:
-                raise PlaylistNotFound(share_code)
+                raise PlaylistNotFoundError(share_code)
             name = await PlaylistService._available_name(
                 session, guild_id, owner_id, f"{source.name}_imported"
             )
@@ -335,7 +335,7 @@ class PlaylistService:
                 await PlaylistRepository.set_share_code(session, playlist.id, code)
                 return code
 
-        raise PlaylistAccessDenied()
+        raise PlaylistAccessDeniedError()
 
     @staticmethod
     async def vote_item(
@@ -347,15 +347,15 @@ class PlaylistService:
         vote: int,
     ) -> tuple[PlaylistItem, tuple[int, int]]:
         if vote not in (1, -1):
-            raise InvalidPlaylistPosition(position)
+            raise InvalidPlaylistPositionError(position)
         if position < 1:
-            raise InvalidPlaylistPosition(position)
+            raise InvalidPlaylistPositionError(position)
 
         async with get_session() as session:
             playlist = await PlaylistService._get_owned_playlist(session, guild_id, owner_id, name)
             item = await PlaylistItemRepository.get_at_position(session, playlist.id, position)
             if item is None:
-                raise InvalidPlaylistPosition(position)
+                raise InvalidPlaylistPositionError(position)
             await PlaylistVoteRepository.upsert_vote(session, item.id, user_id, vote)
             counts = await PlaylistVoteRepository.get_vote_counts(session, [item.id])
             return item, counts.get(item.id, (0, 0))
@@ -373,23 +373,38 @@ class PlaylistService:
                     requester_id=owner_id,
                     source=item.source,
                     thumbnail=item.thumbnail,
+                    lazy_query=item.external_id if item.source == "spotify" and item.external_id else None
                 )
                 for item in items
             ]
 
     @staticmethod
     async def _get_owned_playlist(session, guild_id: int, owner_id: int, name: str) -> Playlist:
+        if name.isdigit():
+            idx = int(name) - 1
+            if idx >= 0:
+                playlists = await PlaylistRepository.list_for_user(session, guild_id, owner_id)
+                if idx < len(playlists):
+                    name = playlists[idx].name
+
         _, name_key = PlaylistService.normalize_name(name)
         playlist = await PlaylistRepository.get_owned_by_name(session, guild_id, owner_id, name_key)
         if playlist is None:
-            raise PlaylistNotFound(name)
+            raise PlaylistNotFoundError(name)
         return playlist
 
     @staticmethod
     async def _get_copy_source(session, guild_id: int, owner_id: int, source: str) -> Playlist:
+        if source.isdigit():
+            idx = int(source) - 1
+            if idx >= 0:
+                playlists = await PlaylistRepository.list_for_user(session, guild_id, owner_id)
+                if idx < len(playlists):
+                    source = playlists[idx].name
+
         try:
             _, name_key = PlaylistService.normalize_name(source)
-        except InvalidPlaylistName:
+        except InvalidPlaylistNameError:
             name_key = ""
 
         playlist = None
@@ -400,7 +415,7 @@ class PlaylistService:
         if playlist is None and len(source) == SHARE_CODE_LENGTH and source.isalnum():
             playlist = await PlaylistRepository.get_by_share_code(session, source)
         if playlist is None:
-            raise PlaylistNotFound(source)
+            raise PlaylistNotFoundError(source)
         return playlist
 
     @staticmethod
@@ -417,7 +432,7 @@ class PlaylistService:
                 session, guild_id, owner_id, candidate.casefold()
             ) is None:
                 return candidate
-        raise PlaylistAlreadyExists(base_name)
+        raise PlaylistAlreadyExistsError(base_name)
 
     @staticmethod
     async def _bulk_insert_items(
@@ -427,12 +442,12 @@ class PlaylistService:
         items: list[PlaylistItemInput],
     ) -> int:
         if len(items) > MAX_PLAYLIST_ITEMS:
-            raise PlaylistLimitExceeded(MAX_PLAYLIST_ITEMS)
+            raise PlaylistLimitExceededError(MAX_PLAYLIST_ITEMS)
 
         position = await PlaylistItemRepository.max_position(session, playlist_id)
         remaining = MAX_PLAYLIST_ITEMS - position
         if len(items) > remaining:
-            raise PlaylistLimitExceeded(MAX_PLAYLIST_ITEMS)
+            raise PlaylistLimitExceededError(MAX_PLAYLIST_ITEMS)
 
         for item in items:
             position += 1
@@ -456,7 +471,7 @@ class PlaylistService:
     async def _reorder_items(session, playlist_id: int, item_ids: list[int]) -> None:
         current_ids = await PlaylistItemRepository.list_ids(session, playlist_id)
         if set(current_ids) != set(item_ids) or len(current_ids) != len(item_ids):
-            raise PlaylistAccessDenied()
+            raise PlaylistAccessDeniedError()
         await PlaylistItemRepository.reorder(session, playlist_id, item_ids)
 
     @staticmethod

@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.checks import cooldown, is_dj
-from core.errors import BotNotConnected, NothingPlaying, QueueEmpty
+from core.errors import BotNotConnectedError, NothingPlayingError, QueueEmptyError
 from core.queue import LoopMode
 
 if TYPE_CHECKING:
@@ -21,6 +21,14 @@ class QueueCog(commands.Cog, name="Queue"):
 
     def __init__(self, bot: MusicBot) -> None:
         self.bot = bot
+
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        settings = await self.bot.get_guild_settings(ctx.guild.id)
+        if settings and settings.music_channel_id and ctx.channel.id != settings.music_channel_id:
+            from core.errors import WrongChannelError
+
+            raise WrongChannelError(settings.music_channel_id)
+        return True
 
     @commands.hybrid_command(name="loop", description="Set loop mode")
     @app_commands.describe(mode="Loop mode: off, track, or queue")
@@ -35,7 +43,7 @@ class QueueCog(commands.Cog, name="Queue"):
         """Set the loop mode."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         try:
             loop_mode = LoopMode(mode.lower())
@@ -53,9 +61,9 @@ class QueueCog(commands.Cog, name="Queue"):
         """Shuffle the current queue."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
         if player.queue.is_empty:
-            raise QueueEmpty()
+            raise QueueEmptyError()
 
         player.queue.shuffle()
         await ctx.send(f"Shuffled **{player.queue.size}** tracks")
@@ -68,7 +76,7 @@ class QueueCog(commands.Cog, name="Queue"):
         """Move a track from one position to another."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         track = player.queue.get(from_pos - 1)
         if not track:
@@ -88,7 +96,7 @@ class QueueCog(commands.Cog, name="Queue"):
         """Remove a track at a given position from the queue."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         track = player.queue.remove(position - 1)
         if track:
@@ -103,7 +111,7 @@ class QueueCog(commands.Cog, name="Queue"):
         """Clear all tracks from the queue (keeps current track playing)."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
-            raise BotNotConnected()
+            raise BotNotConnectedError()
 
         count = player.queue.clear()
         await ctx.send(f"Cleared **{count}** tracks from the queue")
@@ -114,7 +122,7 @@ class QueueCog(commands.Cog, name="Queue"):
         """DM the current track info to yourself."""
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.current:
-            raise NothingPlaying()
+            raise NothingPlayingError()
 
         track = player.current
         embed = discord.Embed(

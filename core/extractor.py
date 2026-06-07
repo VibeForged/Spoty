@@ -108,6 +108,9 @@ async def search_track(query: str) -> Track | None:
     if query.startswith(("http://", "https://")):
         info = await extract_info(query)
     else:
+        # Strip existing ytsearch: if present
+        while query.startswith("ytsearch:"):
+            query = query[9:]
         info = await extract_info(f"ytsearch:{query}")
 
     if info is None:
@@ -166,7 +169,7 @@ async def extract_playlist(url: str) -> tuple[str, list[Track]]:
 
     entries = info.get("entries", [])
     tracks = []
-    
+
     for entry in entries:
         if entry is None:
             continue

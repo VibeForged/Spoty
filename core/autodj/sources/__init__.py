@@ -7,9 +7,9 @@ from core.autodj.sources.search import SearchFallbackSource
 from core.autodj.sources.youtube_mix import YouTubeMixSource
 
 __all__ = [
-    "RecommendationSource",
     "HistorySource",
     "LastFmSource",
+    "RecommendationSource",
     "SearchFallbackSource",
     "YouTubeMixSource",
 ]

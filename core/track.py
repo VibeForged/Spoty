@@ -18,6 +18,7 @@ class Track:
     source: str = "youtube"  # youtube, soundcloud, bandcamp, direct, spotify
     thumbnail: str | None = None
     stream_url: str | None = None  # Direct audio stream URL (from yt-dlp extraction)
+    lazy_query: str | None = None
     added_at: datetime = field(default_factory=datetime.utcnow)
 
     @property

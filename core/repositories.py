@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
-
 
 from loguru import logger
 from sqlalchemy import delete, select, update

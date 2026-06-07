@@ -32,6 +32,7 @@ class GuildSettings(Base):
     prefix: Mapped[str] = mapped_column(String(10), default="!")
     dj_role_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     music_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    panel_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     default_volume: Mapped[int] = mapped_column(Integer, default=50)
     announce_songs: Mapped[bool] = mapped_column(Boolean, default=True)
     interactive_buttons: Mapped[bool] = mapped_column(Boolean, default=True)

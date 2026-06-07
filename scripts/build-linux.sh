@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,7 +25,7 @@ python -m pip install -r "$ROOT/requirements.txt"
 python -m pip install pyinstaller ruff pytest pytest-asyncio
 
 if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
-  python -m ruff check "$ROOT/launcher.py" "$ROOT/config.py" "$ROOT/tests/test_launcher.py"
+  python -m ruff check "$ROOT"
   python -m pytest --tb=short
 fi
 

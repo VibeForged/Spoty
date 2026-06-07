@@ -17,7 +17,7 @@ from core.filters import (
 
 class TestFilters:
     def test_all_builtin_presets_have_values(self):
-        for name, value in BUILTIN_PRESETS.items():
+        for _name, value in BUILTIN_PRESETS.items():
             assert isinstance(value, dict)
             assert value["version"] == 1
 

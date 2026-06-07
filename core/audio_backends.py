@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -11,7 +12,7 @@ import discord
 import wavelink
 from loguru import logger
 
-from core.errors import NothingPlaying, VoiceConnectionFailed
+from core.errors import NothingPlayingError, VoiceConnectionFailedError
 from core.extractor import extract_track_url
 from core.ffmpeg_builder import build_ffmpeg_options
 from core.filters import PresetDefinition, build_ffmpeg_filter_string, build_wavelink_filters
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
     from config import BotConfig
 
 
-class BackendUnavailable(VoiceConnectionFailed):
+class BackendUnavailableError(VoiceConnectionFailedError):
     """Raised when a backend cannot be used."""
 
 
@@ -88,6 +89,7 @@ class BaseAudioBackend(ABC):
     @abstractmethod
     async def wait_for_track_end(self) -> Exception | None: ...
 
+    @abstractmethod
     def cancel_waiters(self) -> None:
         """Cancel any pending wait futures. Override in subclasses."""
 
@@ -138,7 +140,7 @@ class FFmpegBackend(BaseAudioBackend):
     async def play(self, track: Track, seek: float | None = None) -> None:
         stream_url = track.stream_url or await extract_track_url(track)
         if not stream_url:
-            raise VoiceConnectionFailed("Could not get audio stream URL")
+            raise VoiceConnectionFailedError("Could not get audio stream URL")
 
         before_opts, options = build_ffmpeg_options(
             filter_string=build_ffmpeg_filter_string(self._preset_definition),
@@ -197,7 +199,7 @@ class FFmpegBackend(BaseAudioBackend):
 
     async def seek(self, position_ms: int) -> None:
         if self._current_track is None:
-            raise NothingPlaying()
+            raise NothingPlayingError()
         await self.play(self._current_track, seek=position_ms / 1000.0)
 
     async def set_volume(self, volume: int) -> None:
@@ -216,10 +218,8 @@ class FFmpegBackend(BaseAudioBackend):
         if self._vc.is_playing() or self._vc.is_paused():
             self._vc.stop()
         self._playing = False
-        try:
+        with contextlib.suppress(Exception):
             await self._vc.disconnect(force=True)
-        except Exception:
-            pass
 
     async def wait_for_track_end(self) -> Exception | None:
         if self._after_callback is None:
@@ -270,7 +270,7 @@ class LavalinkBackend(BaseAudioBackend):
         try:
             result = await wavelink.Playable.search(track.url, node=self._vc.node)
         except Exception as exc:
-            raise BackendUnavailable(f"Lavalink search failed: {exc}") from exc
+            raise BackendUnavailableError(f"Lavalink search failed: {exc}") from exc
 
         playable = None
         if hasattr(result, "tracks"):
@@ -279,7 +279,7 @@ class LavalinkBackend(BaseAudioBackend):
             playable = result[0] if result else None
 
         if playable is None:
-            raise BackendUnavailable("Lavalink could not load the requested track")
+            raise BackendUnavailableError("Lavalink could not load the requested track")
 
         self._after_callback = asyncio.get_running_loop().create_future()
         self._current_track = track
@@ -293,7 +293,7 @@ class LavalinkBackend(BaseAudioBackend):
                 filters=filters,
             )
         except Exception as exc:
-            raise BackendUnavailable(f"Lavalink playback failed: {exc}") from exc
+            raise BackendUnavailableError(f"Lavalink playback failed: {exc}") from exc
 
     async def stop(self) -> None:
         await self._vc.skip(force=True)
@@ -306,7 +306,7 @@ class LavalinkBackend(BaseAudioBackend):
 
     async def seek(self, position_ms: int) -> None:
         if self._current_track is None:
-            raise NothingPlaying()
+            raise NothingPlayingError()
         await self._vc.seek(position_ms)
 
     async def set_volume(self, volume: int) -> None:

@@ -79,7 +79,7 @@ class TestPlaylistService:
         assert detail.playlist.track_count == 3
 
     async def test_private_playlist_requires_owner_or_share_code(self, db):
-        from core.errors import PlaylistNotFound
+        from core.errors import PlaylistNotFoundError
         from core.playlists.service import PlaylistService
 
         await PlaylistService.create_playlist(1, 100, "Private")
@@ -92,7 +92,7 @@ class TestPlaylistService:
             ),
         )
 
-        with pytest.raises(PlaylistNotFound):
+        with pytest.raises(PlaylistNotFoundError):
             await PlaylistService.get_playlist_detail(1, 200, "Private")
 
         code = await PlaylistService.generate_share_code(1, 100, "Private")

@@ -225,7 +225,7 @@ class AutoDJEngine:
         """Fetch from a single source with a timeout guard."""
         try:
             return await asyncio.wait_for(source.fetch(context), timeout=source.timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Auto-DJ: source '{}' timed out after {}s", source.name, source.timeout)
             return SourceResult([], source.name, confidence=0.0)
 
