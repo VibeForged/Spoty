@@ -350,6 +350,15 @@ def setup_logging(config: BotConfig) -> None:
 
 def main() -> None:
     """Entry point."""
+    import keep_alive
+    keep_alive.keep_alive()
+
+    # Load environment variables
+    load_dotenv()
+
+    # Set up basic logging format for stdout
+    logger.remove()
+
     config = BotConfig()
     setup_logging(config)
 
