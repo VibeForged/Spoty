@@ -13,8 +13,8 @@ from loguru import logger
 from config import get_config
 from core.track import Track
 
-# Bounded thread pool for yt-dlp extraction (sync library)
-_thread_pool = ThreadPoolExecutor(max_workers=3)
+# Bounded thread pool for yt-dlp extraction (sync library), shared across guilds.
+_thread_pool = ThreadPoolExecutor(max_workers=get_config().ytdlp_max_workers)
 
 # Cache extracted info for 10 minutes (600s), max 200 entries (~1MB)
 _extraction_cache: TTLCache[str, dict[str, Any]] = TTLCache(maxsize=200, ttl=600)

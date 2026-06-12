@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models import Playlist, PlaylistItem, PlaylistItemVote
@@ -200,26 +200,25 @@ class PlaylistItemRepository:
 
     @staticmethod
     async def reorder(session: AsyncSession, playlist_id: int, item_ids: list[int]) -> None:
-        for index, item_id in enumerate(item_ids):
-            await session.execute(
-                update(PlaylistItem)
-                .where(
-                    PlaylistItem.id == item_id,
-                    PlaylistItem.playlist_id == playlist_id,
-                )
-                .values(position=-(index + 1))
-            )
-        await session.flush()
+        if not item_ids:
+            return
 
-        for index, item_id in enumerate(item_ids):
-            await session.execute(
-                update(PlaylistItem)
-                .where(
-                    PlaylistItem.id == item_id,
-                    PlaylistItem.playlist_id == playlist_id,
-                )
-                .values(position=index + 1)
-            )
+        # Two bulk CASE updates instead of 2N per-row updates. Pass 1 moves rows to
+        # negative temp positions to avoid colliding with the (playlist_id, position)
+        # unique constraint; pass 2 sets the final 1-indexed positions.
+        temp_positions = case(
+            {item_id: -(index + 1) for index, item_id in enumerate(item_ids)},
+            value=PlaylistItem.id,
+        )
+        final_positions = case(
+            {item_id: index + 1 for index, item_id in enumerate(item_ids)},
+            value=PlaylistItem.id,
+        )
+        where = (PlaylistItem.playlist_id == playlist_id, PlaylistItem.id.in_(item_ids))
+
+        await session.execute(update(PlaylistItem).where(*where).values(position=temp_positions))
+        await session.flush()
+        await session.execute(update(PlaylistItem).where(*where).values(position=final_positions))
 
     @staticmethod
     async def total_duration(session: AsyncSession, playlist_id: int) -> int:

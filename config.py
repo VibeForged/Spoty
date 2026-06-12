@@ -41,6 +41,8 @@ class BotConfig(BaseSettings):
 
     # --- yt-dlp ---
     ytdlp_cookies_file: str = ""
+    # Worker threads for the (blocking) yt-dlp extractor, shared across all guilds.
+    ytdlp_max_workers: int = 8
 
     # --- Last.fm (free API for Auto-DJ recommendations) ---
     lastfm_api_key: str = ""

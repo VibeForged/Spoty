@@ -10,6 +10,7 @@ from pathlib import Path
 
 import discord
 import wavelink
+from cachetools import LRUCache
 from discord.ext import commands
 from dotenv import load_dotenv
 from loguru import logger
@@ -66,8 +67,8 @@ class MusicBot(commands.Bot):
         # Per-guild player instances
         self.players: dict[int, MusicPlayer] = {}
 
-        # Cache for guild settings
-        self._settings_cache: dict[int, GuildSettings] = {}
+        # Bounded cache for guild settings (LRU prevents unbounded growth at scale)
+        self._settings_cache: LRUCache[int, GuildSettings] = LRUCache(maxsize=2000)
         self.backend_manager = BackendManager(self)
 
         # Auto-DJ recommendation engine (shared across all guilds)

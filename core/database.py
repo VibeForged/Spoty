@@ -35,11 +35,13 @@ async def init_db(database_url: str, create_schema: bool = False) -> None:
 
     logger.info("Initializing database: {}", database_url.split("@")[-1] if "@" in database_url else database_url)
 
-    _engine = create_async_engine(
-        database_url,
-        echo=False,
-        pool_pre_ping=True,
-    )
+    engine_kwargs: dict = {"echo": False, "pool_pre_ping": True}
+    # SQLite uses a single file and ignores server-style pooling; tune only for
+    # real client/server databases (Postgres) to avoid pool exhaustion at scale.
+    if not database_url.startswith("sqlite"):
+        engine_kwargs.update(pool_size=20, max_overflow=10, pool_recycle=3600)
+
+    _engine = create_async_engine(database_url, **engine_kwargs)
 
     if _engine.dialect.name == "sqlite":
         @event.listens_for(_engine.sync_engine, "connect")

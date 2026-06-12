@@ -34,6 +34,36 @@ class TestGuildSettingsRepo:
 
 
 @pytest.mark.asyncio
+class TestPlaylistReorder:
+    async def test_bulk_reorder_sets_contiguous_positions(self, db):
+        from core.database import get_session
+        from core.playlists.repository import PlaylistItemRepository, PlaylistRepository
+
+        async with get_session() as session:
+            pl = await PlaylistRepository.create(session, 1, 100, "P", "p")
+            items = [
+                await PlaylistItemRepository.add_item(
+                    session,
+                    pl.id,
+                    position=i + 1,
+                    title=f"t{i}",
+                    url=f"u{i}",
+                    duration=None,
+                    added_by=100,
+                    source="youtube",
+                )
+                for i in range(3)
+            ]
+            new_order = [items[2].id, items[0].id, items[1].id]
+            await PlaylistItemRepository.reorder(session, pl.id, new_order)
+            await session.flush()
+
+            ordered = await PlaylistItemRepository.list_items(session, pl.id)
+            assert [it.id for it in ordered] == new_order
+            assert [it.position for it in ordered] == [1, 2, 3]
+
+
+@pytest.mark.asyncio
 class TestPlaylistService:
     async def test_create_list_and_share_code(self, db):
         from core.playlists.service import PlaylistService

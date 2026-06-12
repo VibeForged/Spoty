@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 from sqlalchemy import delete, select, update
 from sqlalchemy import func as sa_func
+from sqlalchemy.exc import IntegrityError
 
 from core.database import get_session
 from core.filters import (
@@ -281,23 +282,39 @@ class StatsRepo:
     """Repository for guild statistics."""
 
     @staticmethod
-    async def increment(guild_id: int, duration: int = 0) -> None:
-        """Increment play count and duration for a guild."""
+    async def _try_increment(guild_id: int, duration: int) -> bool:
+        """Atomic in-DB increment. Returns False if the guild row doesn't exist yet."""
         async with get_session() as session:
             result = await session.execute(
-                select(Stats).where(Stats.guild_id == guild_id)
-            )
-            stats = result.scalar_one_or_none()
-            if stats is None:
-                stats = Stats(
-                    guild_id=guild_id,
-                    total_plays=1,
-                    total_seconds_played=duration,
+                update(Stats)
+                .where(Stats.guild_id == guild_id)
+                .values(
+                    total_plays=Stats.total_plays + 1,
+                    total_seconds_played=Stats.total_seconds_played + duration,
+                    updated_at=datetime.now(UTC),
                 )
-                session.add(stats)
-            else:
-                stats.total_plays += 1
-                stats.total_seconds_played += duration
+            )
+            return result.rowcount > 0
+
+    @staticmethod
+    async def increment(guild_id: int, duration: int = 0) -> None:
+        """Atomically increment play count and duration for a guild.
+
+        Uses an in-DB ``UPDATE ... SET col = col + n`` so concurrent plays never
+        lose counts (the old SELECT-then-modify pattern was racy). Falls back to
+        an INSERT for the guild's first play, retrying as an update on the rare
+        concurrent-insert race.
+        """
+        if await StatsRepo._try_increment(guild_id, duration):
+            return
+
+        try:
+            async with get_session() as session:
+                session.add(
+                    Stats(guild_id=guild_id, total_plays=1, total_seconds_played=duration)
+                )
+        except IntegrityError:
+            await StatsRepo._try_increment(guild_id, duration)
 
     @staticmethod
     async def get(guild_id: int) -> Stats | None:
