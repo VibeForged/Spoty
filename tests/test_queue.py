@@ -198,3 +198,16 @@ class TestMusicQueue:
         removed = q.dedupe()
         assert removed == 1
         assert [t.url for t in q.tracks] == ["u1", "u2"]
+
+    def test_count_and_remove_by_requester(self):
+        q = MusicQueue()
+        q.add(Track(title="A", url="u1", requester_id=1))
+        q.add(Track(title="B", url="u2", requester_id=2))
+        q.add(Track(title="C", url="u3", requester_id=1))
+
+        assert q.count_for_requester(1) == 2
+        assert q.count_for_requester(2) == 1
+
+        removed = q.remove_by_requester(1)
+        assert removed == 2
+        assert [t.url for t in q.tracks] == ["u2"]

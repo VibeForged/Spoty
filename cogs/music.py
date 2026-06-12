@@ -27,6 +27,35 @@ if TYPE_CHECKING:
     from bot import MusicBot
 
 
+async def _play_history_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    """Suggest recently played tracks for /play."""
+    if not interaction.guild_id:
+        return []
+    from core.repositories import HistoryRepo
+
+    try:
+        rows = await HistoryRepo.get_recent(interaction.guild_id, limit=25)
+    except Exception:
+        return []
+
+    cur = current.lower()
+    seen: set[str] = set()
+    choices: list[app_commands.Choice[str]] = []
+    for row in rows:
+        if row.track_title in seen:
+            continue
+        if cur and cur not in row.track_title.lower():
+            continue
+        seen.add(row.track_title)
+        value = row.track_url if len(row.track_url) <= 100 else row.track_title
+        choices.append(app_commands.Choice(name=row.track_title[:100], value=value[:100]))
+        if len(choices) >= 25:
+            break
+    return choices
+
+
 class Music(commands.Cog):
     """Core music playback commands."""
 
@@ -74,8 +103,26 @@ class Music(commands.Cog):
 
         return player
 
+    async def _within_queue_limit(self, ctx: commands.Context, player: MusicPlayer) -> bool:
+        """Return False if the requester has hit the per-user queue cap (DJs bypass)."""
+        settings = await self.bot.get_guild_settings(ctx.guild.id)
+        cap = getattr(settings, "max_tracks_per_user", 0) if settings else 0
+        if cap <= 0:
+            return True
+
+        from core.permissions import Tier, check_tier, get_user_tier
+
+        dj_role_id = settings.dj_role_id if settings else None
+        lone = getattr(settings, "lone_user_dj", True) if settings else True
+        tier = await get_user_tier(ctx, dj_role_id, lone)
+        if check_tier(tier, Tier.DJ):
+            return True
+
+        return player.queue.count_for_requester(ctx.author.id) < cap
+
     @commands.hybrid_command(name="play", aliases=["p"], description="Play a song from YouTube or other sources")
     @app_commands.describe(query="Song name or URL to play")
+    @app_commands.autocomplete(query=_play_history_autocomplete)
     @cooldown(1, 3.0)
     async def play(self, ctx: commands.Context, *, query: str) -> None:
         """Search and play a track, or add it to the queue."""
@@ -83,6 +130,10 @@ class Music(commands.Cog):
 
         player = await self._get_or_create_player(ctx)
         player.text_channel = ctx.channel
+
+        if not await self._within_queue_limit(ctx, player):
+            await ctx.send("You've reached this server's per-user queue limit.", ephemeral=True)
+            return
 
         # Search for the track
         tracks = []
@@ -665,6 +716,12 @@ class _SearchResultView(discord.ui.View):
             return
         except Exception as exc:
             await interaction.followup.send(f"Couldn't join voice: {exc}", ephemeral=True)
+            return
+
+        if not await self.cog._within_queue_limit(self.ctx, player):
+            await interaction.followup.send(
+                "You've reached this server's per-user queue limit.", ephemeral=True
+            )
             return
 
         player.text_channel = self.ctx.channel

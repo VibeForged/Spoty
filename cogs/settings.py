@@ -63,6 +63,17 @@ class Settings(commands.Cog):
             value=f"{skip_pct}%" if skip_pct > 0 else "Off (DJ-only)",
             inline=True,
         )
+        cap = getattr(gs, "max_tracks_per_user", 0)
+        embed.add_field(
+            name="Per-user Queue Limit",
+            value=str(cap) if cap > 0 else "Unlimited",
+            inline=True,
+        )
+        embed.add_field(
+            name="Default FX",
+            value=getattr(gs, "default_fx", None) or "None",
+            inline=True,
+        )
         embed.add_field(
             name="Inactivity Timeout",
             value=f"{gs.inactivity_timeout}s" if gs.inactivity_timeout > 0 else "24/7 Mode (Never)",
@@ -161,6 +172,53 @@ class Settings(commands.Cog):
         await GuildSettingsRepo.update(ctx.guild.id, default_volume=volume)
         self.bot.invalidate_settings_cache(ctx.guild.id)
         await ctx.send(f"Default volume set to **{volume}%**")
+
+    @settings.command(
+        name="queue_limit", description="Max tracks one member can queue (0 = unlimited)"
+    )
+    @app_commands.describe(count="Max queued tracks per member (0 = unlimited; DJs bypass)")
+    @is_admin()
+    @cooldown(1, 5.0)
+    async def settings_queue_limit(self, ctx: commands.Context, count: int) -> None:
+        """Set the per-user queue cap."""
+        from core.repositories import GuildSettingsRepo
+
+        if count < 0 or count > 500:
+            await ctx.send("Limit must be between 0 and 500.", ephemeral=True)
+            return
+
+        await GuildSettingsRepo.update(ctx.guild.id, max_tracks_per_user=count)
+        self.bot.invalidate_settings_cache(ctx.guild.id)
+        if count == 0:
+            await ctx.send("Per-user queue limit **removed** (unlimited).")
+        else:
+            await ctx.send(f"Per-user queue limit set to **{count}** track(s) per member.")
+
+    @settings.command(name="default_fx", description="Auto-apply an FX preset to new sessions")
+    @app_commands.describe(preset="Preset name, or 'none' to clear")
+    @is_admin()
+    @cooldown(1, 5.0)
+    async def settings_default_fx(self, ctx: commands.Context, preset: str) -> None:
+        """Set (or clear) the FX preset applied automatically when playback starts."""
+        from core.filters import BUILTIN_PRESETS
+        from core.repositories import FXPresetRepo, GuildSettingsRepo
+
+        name = preset.strip().lower()
+        if name in ("none", "off", "clear", ""):
+            await GuildSettingsRepo.update(ctx.guild.id, default_fx=None)
+            self.bot.invalidate_settings_cache(ctx.guild.id)
+            await ctx.send("Default FX **cleared**.")
+            return
+
+        if name not in BUILTIN_PRESETS and await FXPresetRepo.get_by_name(ctx.guild.id, name) is None:
+            await ctx.send(
+                f"Unknown preset: `{preset}`. Use `/fxpreset list` to see options.", ephemeral=True
+            )
+            return
+
+        await GuildSettingsRepo.update(ctx.guild.id, default_fx=name)
+        self.bot.invalidate_settings_cache(ctx.guild.id)
+        await ctx.send(f"Default FX set to **{name}** — applied when playback starts.")
 
     @settings.command(name="announce_songs", description="Toggle now-playing announcements")
     @app_commands.describe(enabled="on or off")

@@ -42,6 +42,10 @@ class GuildSettings(Base):
     lone_user_dj: Mapped[bool] = mapped_column(Boolean, default=True)
     # Percent of voice-channel listeners required to vote-skip (0 = DJ-only skip).
     skip_vote_threshold: Mapped[int] = mapped_column(Integer, default=0)
+    # Max tracks a single member may have queued at once (0 = unlimited).
+    max_tracks_per_user: Mapped[int] = mapped_column(Integer, default=0)
+    # FX preset auto-applied to new playback sessions (None = no default).
+    default_fx: Mapped[str | None] = mapped_column(String(50), nullable=True)
     inactivity_timeout: Mapped[int] = mapped_column(Integer, default=300)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

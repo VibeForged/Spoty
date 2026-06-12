@@ -108,17 +108,22 @@ class QueueCog(commands.Cog, name="Queue"):
         else:
             await ctx.send(f"No track at position {position}.", ephemeral=True)
 
-    @commands.hybrid_command(name="clear", description="Clear the queue")
+    @commands.hybrid_command(name="clear", description="Clear the queue (or one member's tracks)")
+    @app_commands.describe(member="Only clear this member's queued tracks (optional)")
     @is_dj()
     @cooldown(1, 3.0)
-    async def clear(self, ctx: commands.Context) -> None:
-        """Clear all tracks from the queue (keeps current track playing)."""
+    async def clear(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
+        """Clear the queue, or only a specific member's tracks (keeps the current track)."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
             raise BotNotConnectedError()
 
-        count = player.queue.clear()
-        await ctx.send(f"Cleared **{count}** tracks from the queue")
+        if member is not None:
+            count = player.queue.remove_by_requester(member.id)
+            await ctx.send(f"Removed **{count}** track(s) requested by {member.display_name}.")
+        else:
+            count = player.queue.clear()
+            await ctx.send(f"Cleared **{count}** tracks from the queue")
 
     @commands.hybrid_command(
         name="queuesearch", aliases=["qsearch"], description="Search the current queue by title"

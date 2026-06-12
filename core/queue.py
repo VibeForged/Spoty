@@ -169,6 +169,16 @@ class MusicQueue:
         self._tracks.clear()
         return count
 
+    def count_for_requester(self, user_id: int) -> int:
+        """Return how many queued tracks were requested by a given user."""
+        return sum(1 for t in self._tracks if t.requester_id == user_id)
+
+    def remove_by_requester(self, user_id: int) -> int:
+        """Remove all queued tracks requested by a user. Returns the count removed."""
+        before = len(self._tracks)
+        self._tracks = deque(t for t in self._tracks if t.requester_id != user_id)
+        return before - len(self._tracks)
+
     def dedupe(self) -> int:
         """Remove duplicate tracks (by URL), keeping the first. Returns the count removed."""
         seen: set[str] = set()

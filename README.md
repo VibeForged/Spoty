@@ -111,7 +111,7 @@ Playlists are private by default. Names are stored with spaces converted to unde
 `setfx`, `clearfx`, `currenteffects`, `fxpreset list`, `fxpreset create`, `fxpreset delete`, `fxpreset rename`, `fxpreset builder`
 
 ### Settings
-`settings view`, `settings default_volume`, `settings announce_songs`, `settings interactive_buttons`, `settings set_music_channel`, `settings 247`, `settings skip_vote`, `settings lone_user_dj`, `setup`, `prefix`, `set_dj_role`, `lockqueue`
+`settings view`, `settings default_volume`, `settings announce_songs`, `settings interactive_buttons`, `settings set_music_channel`, `settings 247`, `settings skip_vote`, `settings lone_user_dj`, `settings queue_limit`, `settings default_fx`, `setup`, `prefix`, `set_dj_role`, `lockqueue`
 
 ### Permissions
 `permissions view`, `permissions set`, `permissions remove`, `permissions reset`

@@ -81,6 +81,12 @@ class MusicPlayer:
         if settings:
             player.volume = settings.default_volume
             await player._backend.set_volume(settings.default_volume)
+            default_fx = getattr(settings, "default_fx", None)
+            if default_fx:
+                try:
+                    await player.apply_filters([default_fx])
+                except Exception:
+                    logger.debug("Failed to apply default FX '{}'", default_fx, exc_info=True)
         return player
 
     async def play_next(self, error: Exception | None = None) -> None:
