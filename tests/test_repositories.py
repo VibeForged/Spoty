@@ -248,3 +248,45 @@ class TestPermissionRepo:
         await PermissionRepo.set_override(1, "skip", 888, False)
         count = await PermissionRepo.reset_all(1)
         assert count == 2
+
+
+def test_track_roundtrip():
+    from core.track import Track
+
+    track = Track(
+        title="X",
+        url="u",
+        duration=10,
+        requester_id=5,
+        requester_name="bob",
+        source="youtube",
+        thumbnail="th",
+        lazy_query="q",
+    )
+    restored = Track.from_dict(track.to_dict())
+    assert (
+        restored.title,
+        restored.url,
+        restored.duration,
+        restored.requester_id,
+        restored.requester_name,
+        restored.source,
+        restored.thumbnail,
+        restored.lazy_query,
+    ) == ("X", "u", 10, 5, "bob", "youtube", "th", "q")
+
+
+@pytest.mark.asyncio
+class TestQueueStateRepo:
+    async def test_save_upsert_get_delete(self, db):
+        from core.repositories import QueueStateRepo
+
+        await QueueStateRepo.save(7, '{"a": 1}')
+        await QueueStateRepo.save(7, '{"a": 2}')  # upsert, not a second row
+        rows = await QueueStateRepo.get_all()
+        assert len(rows) == 1
+        assert rows[0].guild_id == 7
+        assert rows[0].data == '{"a": 2}'
+
+        await QueueStateRepo.delete(7)
+        assert await QueueStateRepo.get_all() == []

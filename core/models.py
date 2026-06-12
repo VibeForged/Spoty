@@ -210,3 +210,16 @@ class AutoDJFeedback(Base):
     signal: Mapped[str] = mapped_column(String(20), nullable=False)  # "skip" | "complete"
     source: Mapped[str] = mapped_column(String(30), nullable=False)  # recommendation source
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class QueueState(Base):
+    """Snapshot of a guild's live queue, persisted across restarts."""
+
+    __tablename__ = "queue_states"
+
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # JSON blob: voice/text channel ids, volume, loop mode, current track, queue.
+    data: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

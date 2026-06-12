@@ -40,5 +40,35 @@ class Track:
             return self.title
         return self.title[:47] + "..."
 
+    def to_dict(self) -> dict:
+        """Serialize to a JSON-safe dict (for queue persistence).
+
+        Omits ``stream_url`` (expires and is re-resolved) and ``added_at``.
+        """
+        return {
+            "title": self.title,
+            "url": self.url,
+            "duration": self.duration,
+            "requester_id": self.requester_id,
+            "requester_name": self.requester_name,
+            "source": self.source,
+            "thumbnail": self.thumbnail,
+            "lazy_query": self.lazy_query,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Track:
+        """Reconstruct a Track from :meth:`to_dict` output."""
+        return cls(
+            title=data["title"],
+            url=data["url"],
+            duration=data.get("duration"),
+            requester_id=data.get("requester_id"),
+            requester_name=data.get("requester_name", "Unknown"),
+            source=data.get("source", "youtube"),
+            thumbnail=data.get("thumbnail"),
+            lazy_query=data.get("lazy_query"),
+        )
+
     def __str__(self) -> str:
         return f"{self.title} [{self.duration_str}]"

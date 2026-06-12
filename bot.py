@@ -5,6 +5,7 @@ Loads configuration, initializes the database, loads all cogs, and starts the bo
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from pathlib import Path
 
@@ -75,6 +76,9 @@ class MusicBot(commands.Bot):
         from core.autodj.engine import AutoDJEngine
 
         self.autodj_engine = AutoDJEngine()
+
+        # Guard so queue restoration runs only on the first on_ready.
+        self._queues_restored = False
 
     async def get_guild_settings(self, guild_id: int) -> GuildSettings | None:
         """Get guild settings with in-memory caching."""
@@ -172,6 +176,83 @@ class MusicBot(commands.Bot):
                 name=f"{self.config.bot_prefix}help | music",
             )
         )
+
+        # Restore queues saved on the last graceful shutdown (once).
+        if not self._queues_restored:
+            self._queues_restored = True
+            await self._restore_queue_states()
+
+    async def _save_queue_states(self) -> None:
+        """Persist each active guild's queue so it survives a restart."""
+        import json
+
+        from core.repositories import QueueStateRepo
+
+        for guild_id, player in list(self.players.items()):
+            try:
+                vc = player.voice_client
+                if not vc or not vc.channel:
+                    continue
+                queue_tracks = [t.to_dict() for t in player.queue.tracks]
+                current = player.current.to_dict() if player.current else None
+                if not queue_tracks and current is None:
+                    continue
+                payload = {
+                    "voice_channel_id": vc.channel.id,
+                    "text_channel_id": player.text_channel.id if player.text_channel else None,
+                    "volume": player.volume,
+                    "loop_mode": player.queue.loop_mode.value,
+                    "current": current,
+                    "queue": queue_tracks,
+                }
+                await QueueStateRepo.save(guild_id, json.dumps(payload))
+            except Exception:
+                logger.debug("Failed to save queue state for guild {}", guild_id, exc_info=True)
+
+    async def _restore_queue_states(self) -> None:
+        """Rejoin voice and rebuild queues saved on the last shutdown (one-shot)."""
+        import json
+
+        from core.queue import LoopMode
+        from core.repositories import QueueStateRepo
+        from core.track import Track
+
+        try:
+            rows = await QueueStateRepo.get_all()
+        except Exception:
+            logger.debug("Failed to load saved queue states", exc_info=True)
+            return
+
+        for row in rows:
+            guild_id = row.guild_id
+            try:
+                data = json.loads(row.data)
+                channel = self.get_channel(data.get("voice_channel_id"))
+                if not isinstance(channel, discord.VoiceChannel):
+                    continue
+
+                text_channel = None
+                tc_id = data.get("text_channel_id")
+                if tc_id:
+                    tc = self.get_channel(tc_id)
+                    if isinstance(tc, discord.TextChannel):
+                        text_channel = tc
+
+                player = await self.create_player(guild_id, channel, text_channel)
+                player.volume = int(data.get("volume", 50))
+                await player._backend.set_volume(player.volume)
+                with contextlib.suppress(ValueError):
+                    player.queue.loop_mode = LoopMode(data.get("loop_mode", "off"))
+                if data.get("current"):
+                    player.queue.add(Track.from_dict(data["current"]))
+                for track_data in data.get("queue", []):
+                    player.queue.add(Track.from_dict(track_data))
+                await player.play_next()
+                logger.info("Restored queue for guild {} ({} tracks)", guild_id, player.queue.size)
+            except Exception:
+                logger.debug("Failed to restore queue for guild {}", guild_id, exc_info=True)
+            finally:
+                await QueueStateRepo.delete(guild_id)
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Create default settings when joining a new guild."""
@@ -328,8 +409,11 @@ class MusicBot(commands.Bot):
             await player.handle_lavalink_event(Exception(f"Websocket closed: {payload.reason}"))
 
     async def close(self) -> None:
-        """Graceful shutdown — destroy all players and close DB."""
+        """Graceful shutdown — persist queues, destroy all players and close DB."""
         logger.info("Shutting down...")
+
+        # Persist active queues so they can be restored on the next start.
+        await self._save_queue_states()
 
         # Destroy all players
         for guild_id in list(self.players.keys()):

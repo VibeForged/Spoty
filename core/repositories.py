@@ -24,6 +24,7 @@ from core.models import (
     GuildSettings,
     History,
     Permission,
+    QueueState,
     Stats,
 )
 
@@ -457,3 +458,32 @@ class AutoDJFeedbackRepo:
                 .limit(limit)
             )
             return list(result.scalars().all())
+
+
+class QueueStateRepo:
+    """Repository for persisted per-guild queue snapshots (restart recovery)."""
+
+    @staticmethod
+    async def save(guild_id: int, data: str) -> None:
+        """Upsert a guild's serialized queue snapshot."""
+        async with get_session() as session:
+            result = await session.execute(
+                update(QueueState)
+                .where(QueueState.guild_id == guild_id)
+                .values(data=data, updated_at=datetime.now(UTC))
+            )
+            if result.rowcount == 0:
+                session.add(QueueState(guild_id=guild_id, data=data))
+
+    @staticmethod
+    async def get_all() -> list[QueueState]:
+        """Return all stored queue snapshots."""
+        async with get_session() as session:
+            result = await session.execute(select(QueueState))
+            return list(result.scalars().all())
+
+    @staticmethod
+    async def delete(guild_id: int) -> None:
+        """Remove a guild's stored snapshot (after restore or stop)."""
+        async with get_session() as session:
+            await session.execute(delete(QueueState).where(QueueState.guild_id == guild_id))
