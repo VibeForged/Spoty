@@ -245,5 +245,31 @@ class AutoDJ(commands.Cog):
         )
 
 
+    @autodj.command(name="reset", description="Reset the Auto-DJ session for this server")
+    @is_dj()
+    @cooldown(1, 5.0)
+    async def autodj_reset(self, ctx: commands.Context) -> None:
+        """Clear the in-memory Auto-DJ session so it re-seeds fresh.
+
+        Persistent like/skip learning is reloaded from the database; only the
+        current session's recent-artist/url state and served counter are cleared.
+        """
+        guild_id = ctx.guild.id
+        self.bot.autodj_engine.destroy_session(guild_id)
+
+        player = self.bot.get_player(guild_id)
+        seed = player.current if player else None
+        if seed is not None:
+            await self.bot.autodj_engine.get_or_create_session(guild_id, seed)
+
+        await ctx.send(
+            embed=discord.Embed(
+                title="🤖 Auto-DJ Reset",
+                description="Cleared the Auto-DJ session. It will re-seed from the next track.",
+                color=discord.Color.green(),
+            )
+        )
+
+
 async def setup(bot: MusicBot) -> None:
     await bot.add_cog(AutoDJ(bot))
