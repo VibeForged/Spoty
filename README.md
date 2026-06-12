@@ -58,6 +58,32 @@ All configuration is via environment variables or `.env` file. See `.env.example
 | `SPOTIPY_CLIENT_ID` | | Spotify API client ID |
 | `SPOTIPY_CLIENT_SECRET` | | Spotify API client secret |
 | `YTDLP_COOKIES_FILE` | | Path to YouTube cookies file (for age-restricted content) |
+| `YOUTUBE_POT_AUTOREFRESH` | `true` | Auto-generate & push a YouTube PO token to Lavalink (servers) |
+| `YOUTUBE_POT_REFRESH_HOURS` | `6` | How often the PO-token sidecar refreshes |
+| `YOUTUBE_OAUTH_ENABLED` | `false` | Opt-in YouTube OAuth (use a throwaway account) |
+
+## YouTube on servers / datacenter IPs
+
+On a home/residential IP, YouTube playback works out of the box. On **servers,
+VPS, cloud, or Hugging Face Spaces**, YouTube blocks anonymous requests from
+datacenter IPs with *"Sign in to confirm you're not a bot."* This is an
+IP-reputation block, not a bug.
+
+The Docker image handles this automatically: it runs bundled Lavalink plus a
+small **PO-token sidecar** ([scripts/potoken_refresher.mjs](scripts/potoken_refresher.mjs))
+that generates a Proof-of-Origin token (browserless, no login) and pushes it to
+Lavalink's `youtube-source` plugin every few hours. No configuration needed —
+`YOUTUBE_POT_AUTOREFRESH=true` is the default.
+
+A PO token is not bulletproof on heavily-flagged IPs. The strongest free fix is
+**opt-in OAuth with a throwaway Google account** (never your personal one):
+
+1. Set `YOUTUBE_OAUTH_ENABLED=true` and restart.
+2. Lavalink logs a Google device-code URL — open it and authorize the burner account.
+3. Lavalink logs a refresh token — set `YOUTUBE_OAUTH_REFRESH_TOKEN` and
+   `YOUTUBE_OAUTH_SKIP_INIT=true`, then restart.
+
+See `.env.example` for all related variables.
 
 ## Commands
 

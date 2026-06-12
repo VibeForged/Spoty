@@ -2,6 +2,13 @@ services:
   bot:
     build: .
     env_file: .env
+    # The bot image now bundles a JRE, so the launcher could start its own
+    # Lavalink. In compose we use the dedicated `lavalink` service instead, so
+    # skip the in-container Lavalink and connect to the service by name.
+    environment:
+      - SPOTY_SKIP_LAVALINK=true
+      - LAVALINK_HOST=lavalink
+      - LAVALINK_PORT=8080
     volumes:
       - bot-data:/app/data
       - bot-logs:/app/logs

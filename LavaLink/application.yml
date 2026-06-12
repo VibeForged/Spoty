@@ -29,8 +29,21 @@ plugins:
     allowDirectPlaylistIds: true # Whether just playlist IDs can match. If false, only complete URLs will be loaded.
     # The clients to use for track loading. See below for a list of valid clients.
     # Clients are queried in the order they are given (so the first client is queried first and so on...)
+    # WEB/WEBEMBEDDED are listed first because the PO token below only applies to them.
     clients:
       - MUSIC
-      - ANDROID_VR
       - WEB
       - WEBEMBEDDED
+      - ANDROID_VR
+    # Proof-of-Origin token to bypass YouTube's "Sign in to confirm you're not a bot"
+    # wall on datacenter/server IPs. Left blank by default; on servers it is pushed at
+    # runtime by scripts/potoken_refresher.mjs (POST /youtube) or set statically via env.
+    pot:
+      token: "${YOUTUBE_PO_TOKEN:}"
+      visitorData: "${YOUTUBE_VISITOR_DATA:}"
+    # Opt-in OAuth (use a THROWAWAY Google account, never your personal one). Set
+    # YOUTUBE_OAUTH_ENABLED=true to enable; see .env.example for the device-code flow.
+    oauth:
+      enabled: ${YOUTUBE_OAUTH_ENABLED:false}
+      refreshToken: "${YOUTUBE_OAUTH_REFRESH_TOKEN:}"
+      skipInitialization: ${YOUTUBE_OAUTH_SKIP_INIT:false}

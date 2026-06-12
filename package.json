@@ -1,0 +1,15 @@
+{
+  "name": "spoty-potoken-refresher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browserless YouTube PO-token generator that pushes fresh tokens to the Lavalink youtube-source plugin (POST /youtube).",
+  "scripts": {
+    "refresh": "node scripts/potoken_refresher.mjs"
+  },
+  "dependencies": {
+    "bgutils-js": "^3.2.0",
+    "jsdom": "^24.1.1",
+    "youtubei.js": "^17.0.0"
+  }
+}

@@ -94,7 +94,9 @@ def lavalink_dir(base_dir: Path) -> Path:
 def java_bin(base_dir: Path) -> Path:
     """Return the bundled Java executable path."""
     executable = "java.exe" if sys.platform.startswith("win") else "java"
-    configured = runtime_executable(base_dir, "SPOTY_JAVA_BIN", ("runtime", "jre", "bin", executable))
+    configured = runtime_executable(
+        base_dir, "SPOTY_JAVA_BIN", ("runtime", "jre", "bin", executable)
+    )
     if configured.exists() or os.environ.get("SPOTY_JAVA_BIN"):
         return configured
 
@@ -108,7 +110,9 @@ def java_bin(base_dir: Path) -> Path:
 def ffmpeg_bin(base_dir: Path) -> Path:
     """Return the bundled FFmpeg executable path."""
     executable = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
-    configured = runtime_executable(base_dir, "SPOTY_FFMPEG_BIN", ("runtime", "ffmpeg", "bin", executable))
+    configured = runtime_executable(
+        base_dir, "SPOTY_FFMPEG_BIN", ("runtime", "ffmpeg", "bin", executable)
+    )
     if configured.exists() or os.environ.get("SPOTY_FFMPEG_BIN"):
         return configured
 
@@ -145,7 +149,9 @@ def select_lavalink_port(ports: range = PORT_RANGE) -> int:
     raise RuntimeError(f"No available Lavalink port in range {first}-{last}")
 
 
-def wait_for_lavalink(port: int, password: str, timeout_seconds: int = HEALTH_TIMEOUT_SECONDS) -> None:
+def wait_for_lavalink(
+    port: int, password: str, timeout_seconds: int = HEALTH_TIMEOUT_SECONDS
+) -> None:
     """Wait until Lavalink responds to an authenticated health request."""
     deadline = time.monotonic() + timeout_seconds
     headers = {
@@ -289,6 +295,39 @@ def start_lavalink(base_dir: Path, port: int, password: str) -> subprocess.Popen
     return subprocess.Popen(command, cwd=ll_dir)
 
 
+def start_potoken_refresher(base_dir: Path, port: int, password: str) -> subprocess.Popen | None:
+    """Start the Node PO-token refresher that pushes fresh tokens to Lavalink.
+
+    This generates a YouTube Proof-of-Origin token (browserless) and POSTs it to
+    Lavalink's youtube-source `/youtube` endpoint so playback works from
+    datacenter/server IPs without a login.
+
+    Non-fatal: returns None (with a warning) if disabled via env, if the script
+    is missing, or if Node is not installed (e.g. the Windows packaged build).
+    """
+    if not is_truthy(os.environ.get("YOUTUBE_POT_AUTOREFRESH", "true")):
+        print("PO-token auto-refresh disabled (YOUTUBE_POT_AUTOREFRESH).", flush=True)
+        return None
+
+    script = base_dir / "scripts" / "potoken_refresher.mjs"
+    if not script.exists():
+        print(f"PO-token refresher script not found at {script}; skipping.", flush=True)
+        return None
+
+    env = os.environ.copy()
+    env["LAVALINK_HOST"] = HOST
+    env["LAVALINK_PORT"] = str(port)
+    env["LAVALINK_PASSWORD"] = password
+
+    try:
+        process = subprocess.Popen(["node", str(script)], env=env)
+        print("Started PO-token refresher sidecar.", flush=True)
+        return process
+    except (FileNotFoundError, OSError) as exc:
+        print(f"Could not start PO-token refresher (Node missing?): {exc}", flush=True)
+        return None
+
+
 def stop_process(process: subprocess.Popen, timeout_seconds: int = 10) -> None:
     """Terminate a child process gracefully, then force-kill if needed."""
     if process.poll() is not None:
@@ -341,6 +380,7 @@ def run_launcher() -> int:
     skip_lavalink = is_truthy(os.environ.get("SPOTY_SKIP_LAVALINK"))
     port = None if skip_lavalink else select_lavalink_port()
     lavalink_process = None
+    refresher_process = None
     bot_process = None
 
     print_startup_summary(base_dir, data_dir, port)
@@ -350,6 +390,7 @@ def run_launcher() -> int:
             password = os.environ.get("LAVALINK_PASSWORD", LAVALINK_PASSWORD)
             lavalink_process = start_lavalink(base_dir, port, password)
             wait_for_lavalink(port, password)
+            refresher_process = start_potoken_refresher(base_dir, port, password)
 
         env = build_child_env(base_dir, data_dir, port)
         bot_process = subprocess.Popen(bot_command(), env=env)
@@ -370,6 +411,8 @@ def run_launcher() -> int:
     finally:
         if bot_process is not None:
             stop_process(bot_process)
+        if refresher_process is not None:
+            stop_process(refresher_process)
         if lavalink_process is not None:
             stop_process(lavalink_process)
 

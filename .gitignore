@@ -10,6 +10,9 @@ runtime-downloads/
 .eggs/
 *.egg
 
+# Node (PO-token refresher sidecar)
+node_modules/
+
 # Virtual environments
 venv/
 .venv/

@@ -11,6 +11,7 @@ from pathlib import Path
 import discord
 import wavelink
 from discord.ext import commands
+from dotenv import load_dotenv
 from loguru import logger
 
 from config import BotConfig
