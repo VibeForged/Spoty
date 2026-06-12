@@ -7,6 +7,7 @@ and handles the full pipeline: fetch → score → filter → inject.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -37,6 +38,10 @@ class AutoDJEngine:
         5. Return top picks for queue injection
     """
 
+    # Circuit breaker: after this many consecutive failures, pause a source for the cooldown.
+    _BREAKER_THRESHOLD = 3
+    _BREAKER_COOLDOWN = 300.0  # seconds
+
     def __init__(self) -> None:
         self._sessions: dict[int, SessionContext] = {}
         self._sources: list[RecommendationSource] = [
@@ -45,6 +50,30 @@ class AutoDJEngine:
             HistorySource(),
             SearchFallbackSource(),
         ]
+        # Per-source circuit-breaker state.
+        self._source_fail_counts: dict[str, int] = {}
+        self._source_open_until: dict[str, float] = {}
+
+    def _source_available(self, name: str) -> bool:
+        """Whether a source is allowed to run (not currently paused by the breaker)."""
+        return time.monotonic() >= self._source_open_until.get(name, 0.0)
+
+    def _record_source_outcome(self, name: str, *, success: bool) -> None:
+        """Update breaker state after a source responds or fails."""
+        if success:
+            self._source_fail_counts[name] = 0
+            self._source_open_until.pop(name, None)
+            return
+        count = self._source_fail_counts.get(name, 0) + 1
+        self._source_fail_counts[name] = count
+        if count >= self._BREAKER_THRESHOLD:
+            self._source_open_until[name] = time.monotonic() + self._BREAKER_COOLDOWN
+            logger.info(
+                "Auto-DJ: pausing source '{}' for {:.0f}s after {} consecutive failures",
+                name,
+                self._BREAKER_COOLDOWN,
+                count,
+            )
 
     def get_session(self, guild_id: int) -> SessionContext | None:
         """Get the current session for a guild, if one exists."""
@@ -178,27 +207,29 @@ class AutoDJEngine:
         )
 
     async def _fetch_all_sources(self, context: SessionContext) -> list[ScoredTrack]:
-        """Fetch candidates from all sources in parallel with individual timeouts."""
-        tasks = []
-        for source in self._sources:
-            task = asyncio.create_task(
-                self._fetch_with_timeout(source, context),
-                name=f"autodj-{source.name}",
-            )
-            tasks.append(task)
+        """Fetch candidates from available sources in parallel with individual timeouts."""
+        # Skip any source the circuit breaker has temporarily paused.
+        active = [s for s in self._sources if self._source_available(s.name)]
+        tasks = [
+            asyncio.create_task(self._fetch_with_timeout(s, context), name=f"autodj-{s.name}")
+            for s in active
+        ]
 
-        results: list[SourceResult] = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_candidates: list[ScoredTrack] = []
-        for i, result in enumerate(results):
-            source_name = self._sources[i].name
+        for source, result in zip(active, results, strict=False):
             if isinstance(result, Exception):
-                logger.warning("Auto-DJ: source '{}' failed: {}", source_name, result)
+                # Timeouts surface here too (wait_for raises TimeoutError).
+                self._record_source_outcome(source.name, success=False)
+                logger.warning("Auto-DJ: source '{}' failed: {}", source.name, result)
                 continue
+
+            self._record_source_outcome(source.name, success=True)
             if result.tracks:
                 logger.debug(
                     "Auto-DJ: source '{}' returned {} candidates (confidence={:.1f}, latency={:.0f}ms)",
-                    source_name,
+                    source.name,
                     len(result.tracks),
                     result.confidence,
                     result.latency_ms,
@@ -222,12 +253,12 @@ class AutoDJEngine:
     async def _fetch_with_timeout(
         self, source: RecommendationSource, context: SessionContext
     ) -> SourceResult:
-        """Fetch from a single source with a timeout guard."""
-        try:
-            return await asyncio.wait_for(source.fetch(context), timeout=source.timeout)
-        except TimeoutError:
-            logger.warning("Auto-DJ: source '{}' timed out after {}s", source.name, source.timeout)
-            return SourceResult([], source.name, confidence=0.0)
+        """Fetch from a single source with a timeout guard.
+
+        A timeout raises ``TimeoutError`` so the caller records it as a failure
+        for the circuit breaker.
+        """
+        return await asyncio.wait_for(source.fetch(context), timeout=source.timeout)
 
     @staticmethod
     def _calculate_batch_size(queue: MusicQueue, session: SessionContext) -> int:
