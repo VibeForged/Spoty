@@ -132,6 +132,31 @@ class MusicBot(commands.Bot):
         logger.info("Setup complete — {} cogs loaded", len(self.extensions))
         logger.info("Audio backend status: {}", self.backend_manager.backend_status())
 
+        await self._restore_panels()
+
+    async def _restore_panels(self) -> None:
+        """Re-register persistent player-control panels so their buttons work after a restart."""
+        from core.repositories import GuildSettingsRepo
+        from core.ui.player_control import PlayerControlPanel
+
+        try:
+            rows = await GuildSettingsRepo.get_all_with_panel()
+        except Exception:
+            logger.debug("Failed to load guild panels for restore", exc_info=True)
+            return
+
+        restored = 0
+        for gs in rows:
+            try:
+                self.add_view(
+                    PlayerControlPanel(self, gs.guild_id), message_id=gs.panel_message_id
+                )
+                restored += 1
+            except Exception:
+                logger.debug("Failed to restore panel for guild {}", gs.guild_id, exc_info=True)
+        if restored:
+            logger.info("Restored {} persistent control panel(s)", restored)
+
     async def on_ready(self) -> None:
         logger.info("Bot ready as {} (ID: {})", self.user, self.user.id)
         logger.info("Connected to {} guilds", len(self.guilds))

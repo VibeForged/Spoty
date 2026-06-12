@@ -56,6 +56,15 @@ class GuildSettingsRepo:
             return settings
 
     @staticmethod
+    async def get_all_with_panel() -> list[GuildSettings]:
+        """Return all guild settings that have a control-panel message stored."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(GuildSettings).where(GuildSettings.panel_message_id.is_not(None))
+            )
+            return list(result.scalars().all())
+
+    @staticmethod
     async def update(guild_id: int, **kwargs) -> None:
         """Update specific settings fields for a guild."""
         async with get_session() as session:
