@@ -142,6 +142,31 @@ async def search_track(query: str) -> Track | None:
     return _info_to_track(info)
 
 
+async def search_tracks(query: str, limit: int = 5) -> list[Track]:
+    """Search and return up to ``limit`` Track results (for a result picker).
+
+    Uses the flat ``ytsearchN`` extraction so it's cheap (no per-result format
+    resolution); the chosen track is resolved when it actually plays.
+    """
+    while query.startswith("ytsearch:"):
+        query = query[9:]
+
+    info = await extract_info(f"ytsearch{limit}:{query}", opts=YDL_SEARCH_OPTS)
+    if not info or "entries" not in info:
+        return []
+
+    tracks: list[Track] = []
+    for entry in info["entries"]:
+        if entry is None:
+            continue
+        track = _info_to_track(entry)
+        if track:
+            tracks.append(track)
+        if len(tracks) >= limit:
+            break
+    return tracks
+
+
 async def extract_track_url(track: Track) -> str | None:
     """Get a fresh stream URL for a track.
 

@@ -40,6 +40,7 @@ class MusicPlayer:
         self._backend_switch_in_progress = False
         self._consecutive_failures = 0
         self._skip_votes: set[int] = set()
+        self._sleep_task: asyncio.Task | None = None
         self._backend._volume = self.volume
         logger.info("MusicPlayer created for guild {} using {}", guild_id, self.backend_name)
 
@@ -164,6 +165,36 @@ class MusicPlayer:
         """Record a skip vote for the current track. Returns the current vote count."""
         self._skip_votes.add(user_id)
         return len(self._skip_votes)
+
+    def set_sleep_timer(self, seconds: int) -> None:
+        """Stop playback after ``seconds``. Replaces any existing sleep timer."""
+        self.cancel_sleep_timer()
+        self._sleep_task = asyncio.create_task(self._sleep_wrapper(seconds))
+
+    def cancel_sleep_timer(self) -> None:
+        """Cancel a pending sleep timer, if any."""
+        if self._sleep_task and not self._sleep_task.done():
+            self._sleep_task.cancel()
+        self._sleep_task = None
+
+    async def _sleep_wrapper(self, seconds: int) -> None:
+        try:
+            await asyncio.sleep(seconds)
+            if self._destroyed:
+                return
+            if self.text_channel:
+                await self.text_channel.send(
+                    embed=discord.Embed(
+                        title="Sleep Timer",
+                        description="Sleep timer reached — stopping playback. Good night!",
+                        color=discord.Color.blurple(),
+                    )
+                )
+            await self.stop()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.debug("Error in sleep timer", exc_info=True)
 
     async def play_previous(self) -> Track | None:
         """Replay the most recent track from history. Returns it, or None if empty."""
@@ -563,6 +594,7 @@ class MusicPlayer:
         self.bot.players.pop(self.guild_id, None)  # Free slot immediately to prevent duplicates
 
         self._cancel_inactive_timer()
+        self.cancel_sleep_timer()
         if self._play_task:
             self._play_task.cancel()
         if self._autodj_prefill_task and not self._autodj_prefill_task.done():

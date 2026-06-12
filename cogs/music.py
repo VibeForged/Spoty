@@ -143,6 +143,29 @@ class Music(commands.Cog):
                 embed.add_field(name="Requested by", value=ctx.author.display_name, inline=True)
                 await ctx.send(embed=embed)
 
+    @commands.hybrid_command(name="search", description="Search and pick from the top results")
+    @app_commands.describe(query="Song name to search for")
+    @cooldown(1, 5.0)
+    async def search(self, ctx: commands.Context, *, query: str) -> None:
+        """Show the top search results and let the requester pick one to play."""
+        from core.extractor import search_tracks
+
+        await ctx.defer()
+        tracks = await search_tracks(query, limit=5)
+        if not tracks:
+            raise TrackNotFoundError(query)
+
+        lines = [
+            f"`{i + 1}.` {track.short_title} `{track.duration_str}`"
+            for i, track in enumerate(tracks)
+        ]
+        embed = discord.Embed(
+            title=f"Search results for '{query[:80]}'",
+            description="\n".join(lines),
+            color=discord.Color.blue(),
+        )
+        await ctx.send(embed=embed, view=_SearchResultView(self, ctx, tracks))
+
     @commands.hybrid_command(
         name="playnext", aliases=["pn"], description="Add a song to the front of the queue"
     )
@@ -486,6 +509,67 @@ class Music(commands.Cog):
         await player.seek(seconds * 1000)
         await ctx.send(f"Seeked to `{_format_time(seconds)}`")
 
+    @commands.hybrid_command(name="forward", aliases=["fwd"], description="Jump forward in the track")
+    @app_commands.describe(seconds="Seconds to jump forward (default 15)")
+    @is_dj()
+    @cooldown(1, 2.0)
+    async def forward(self, ctx: commands.Context, seconds: int = 15) -> None:
+        """Seek forward by a number of seconds."""
+        player = self.bot.get_player(ctx.guild.id)
+        if not player or not player.current:
+            raise NothingPlayingError()
+        if seconds <= 0:
+            await ctx.send("Seconds must be positive.", ephemeral=True)
+            return
+
+        target = player.position_ms // 1000 + seconds
+        duration = player.current.duration
+        if duration is not None and target > duration:
+            target = duration
+        await player.seek(target * 1000)
+        await ctx.send(f"Skipped forward to `{_format_time(target)}`")
+
+    @commands.hybrid_command(name="rewind", aliases=["rwd"], description="Rewind the track")
+    @app_commands.describe(seconds="Seconds to rewind (default 15)")
+    @is_dj()
+    @cooldown(1, 2.0)
+    async def rewind(self, ctx: commands.Context, seconds: int = 15) -> None:
+        """Seek backward by a number of seconds."""
+        player = self.bot.get_player(ctx.guild.id)
+        if not player or not player.current:
+            raise NothingPlayingError()
+        if seconds <= 0:
+            await ctx.send("Seconds must be positive.", ephemeral=True)
+            return
+
+        target = max(0, player.position_ms // 1000 - seconds)
+        await player.seek(target * 1000)
+        await ctx.send(f"Rewound to `{_format_time(target)}`")
+
+    @commands.hybrid_command(
+        name="sleeptimer", aliases=["sleep"], description="Stop playback after N minutes"
+    )
+    @app_commands.describe(minutes="Minutes until playback stops (0 to cancel)")
+    @is_dj()
+    @cooldown(1, 3.0)
+    async def sleeptimer(self, ctx: commands.Context, minutes: int) -> None:
+        """Set or cancel a sleep timer that stops playback after a delay."""
+        player = self.bot.get_player(ctx.guild.id)
+        if not player:
+            raise BotNotConnectedError()
+        if minutes < 0 or minutes > 1440:
+            await ctx.send("Minutes must be between 0 and 1440.", ephemeral=True)
+            return
+
+        if minutes == 0:
+            player.cancel_sleep_timer()
+            await ctx.send("Sleep timer cancelled.")
+            return
+
+        player.text_channel = ctx.channel
+        player.set_sleep_timer(minutes * 60)
+        await ctx.send(f"Sleep timer set — playback will stop in **{minutes}** minute(s).")
+
     @commands.hybrid_command(name="volume", aliases=["vol"], description="Set the playback volume")
     @app_commands.describe(level="Volume level (0-200)")
     @is_dj()
@@ -532,6 +616,71 @@ class Music(commands.Cog):
 
         await player.skip()
         await ctx.send(f"Jumped to position **{position}**")
+
+
+class _SearchResultView(discord.ui.View):
+    """A dropdown that lets the requester pick one of the search results to play."""
+
+    def __init__(self, cog: Music, ctx: commands.Context, tracks: list[Track]) -> None:
+        super().__init__(timeout=60.0)
+        self.cog = cog
+        self.ctx = ctx
+        self.tracks = tracks
+
+        options = [
+            discord.SelectOption(
+                label=track.short_title,
+                value=str(i),
+                description=(track.duration_str if track.duration else None),
+            )
+            for i, track in enumerate(tracks)
+        ]
+        self._select: discord.ui.Select = discord.ui.Select(
+            placeholder="Pick a track to play…", min_values=1, max_values=1, options=options
+        )
+        self._select.callback = self._on_select
+        self.add_item(self._select)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("This search isn't yours.", ephemeral=True)
+            return False
+        return True
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        track = self.tracks[int(self._select.values[0])]
+        for child in self.children:
+            child.disabled = True
+        self.stop()
+        await interaction.response.edit_message(
+            content=f"Selected: **{track.short_title}**", view=self
+        )
+
+        from core.errors import MusicBotError
+
+        try:
+            player = await self.cog._get_or_create_player(self.ctx)
+        except MusicBotError as exc:
+            await interaction.followup.send(exc.message, ephemeral=True)
+            return
+        except Exception as exc:
+            await interaction.followup.send(f"Couldn't join voice: {exc}", ephemeral=True)
+            return
+
+        player.text_channel = self.ctx.channel
+        track.requester_id = interaction.user.id
+        track.requester_name = interaction.user.display_name
+        player.queue.add(track)
+
+        if not player.is_playing and not player.is_paused:
+            await player.play_next()
+            await interaction.followup.send(f"Now playing **{track.short_title}**")
+        else:
+            await interaction.followup.send(f"Added **{track.short_title}** to the queue")
+
+    async def on_timeout(self) -> None:
+        for child in self.children:
+            child.disabled = True
 
 
 def _format_time(seconds: int) -> str:

@@ -88,7 +88,9 @@ See `.env.example` for all related variables.
 ## Commands
 
 ### Music
-`play`, `playnext`, `previous`, `pause`, `resume`, `stop`, `skip`, `seek`, `volume`, `nowplaying`, `join`, `leave`, `replay`, `jump`, `panel`
+`play`, `search`, `playnext`, `previous`, `pause`, `resume`, `stop`, `skip`, `seek`, `forward`, `rewind`, `volume`, `nowplaying`, `sleeptimer`, `join`, `leave`, `replay`, `jump`, `panel`
+
+`search` shows the top results in a dropdown so you can pick the right one; `sleeptimer <minutes>` stops playback after a delay (0 cancels).
 
 `skip` is instant for DJs/admins; if a server sets a vote threshold, other listeners vote to skip.
 
