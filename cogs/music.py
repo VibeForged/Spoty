@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
+from cachetools import TTLCache
 from discord import app_commands
 from discord.ext import commands
 from loguru import logger
@@ -27,30 +28,43 @@ if TYPE_CHECKING:
     from bot import MusicBot
 
 
+# Short-TTL cache of recent (title, url) per guild — autocomplete fires per keystroke.
+_history_ac_cache: TTLCache[int, list[tuple[str, str]]] = TTLCache(maxsize=500, ttl=30)
+
+
+async def _recent_history_entries(guild_id: int) -> list[tuple[str, str]]:
+    cached = _history_ac_cache.get(guild_id)
+    if cached is not None:
+        return cached
+    from core.repositories import HistoryRepo
+
+    try:
+        rows = await HistoryRepo.get_recent(guild_id, limit=25)
+    except Exception:
+        return []
+    entries = [(r.track_title, r.track_url) for r in rows]
+    _history_ac_cache[guild_id] = entries
+    return entries
+
+
 async def _play_history_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
     """Suggest recently played tracks for /play."""
     if not interaction.guild_id:
         return []
-    from core.repositories import HistoryRepo
-
-    try:
-        rows = await HistoryRepo.get_recent(interaction.guild_id, limit=25)
-    except Exception:
-        return []
 
     cur = current.lower()
     seen: set[str] = set()
     choices: list[app_commands.Choice[str]] = []
-    for row in rows:
-        if row.track_title in seen:
+    for title, url in await _recent_history_entries(interaction.guild_id):
+        if title in seen:
             continue
-        if cur and cur not in row.track_title.lower():
+        if cur and cur not in title.lower():
             continue
-        seen.add(row.track_title)
-        value = row.track_url if len(row.track_url) <= 100 else row.track_title
-        choices.append(app_commands.Choice(name=row.track_title[:100], value=value[:100]))
+        seen.add(title)
+        value = url if len(url) <= 100 else title
+        choices.append(app_commands.Choice(name=title[:100], value=value[:100]))
         if len(choices) >= 25:
             break
     return choices

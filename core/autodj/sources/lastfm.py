@@ -16,6 +16,25 @@ from core.track import Track
 # Cache Last.fm API responses for 1 hour (same artist+track = same results)
 _lastfm_cache: TTLCache[str, list[dict]] = TTLCache(maxsize=500, ttl=3600)
 
+# Reused HTTP session — avoids a TLS handshake per recommendation fetch.
+_session: aiohttp.ClientSession | None = None
+
+
+async def get_session() -> aiohttp.ClientSession:
+    """Return a lazily-created, reused aiohttp session."""
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession()
+    return _session
+
+
+async def close_session() -> None:
+    """Close the reused session (call on shutdown)."""
+    global _session
+    if _session and not _session.closed:
+        await _session.close()
+    _session = None
+
 
 class LastFmSource(RecommendationSource):
     """Fetch similar tracks via Last.fm's free API.
@@ -130,7 +149,10 @@ class LastFmSource(RecommendationSource):
         """Make an HTTP GET request to the Last.fm API."""
         url = "https://ws.audioscrobbler.com/2.0/"
         try:
-            async with aiohttp.ClientSession() as session, session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            session = await get_session()
+            async with session.get(
+                url, params=params, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
                 if resp.status != 200:
                     logger.debug("Last.fm API returned status {}", resp.status)
                     return []

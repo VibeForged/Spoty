@@ -6,6 +6,7 @@ import random
 from typing import TYPE_CHECKING
 
 import discord
+from cachetools import TTLCache
 from discord import app_commands
 from discord.ext import commands
 from loguru import logger
@@ -18,18 +19,33 @@ from core.ui.playlist_paginator import PlaylistPaginator, build_playlist_embed
 if TYPE_CHECKING:
     from bot import MusicBot
 
+# Short-TTL cache of a user's playlist names — autocomplete fires per keystroke.
+_playlist_ac_cache: TTLCache[tuple[int, int], list[str]] = TTLCache(maxsize=2000, ttl=30)
+
 
 async def playlist_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
     if not interaction.guild_id:
         return []
-    playlists = await PlaylistService.list_user_playlists(interaction.guild_id, interaction.user.id)
-    choices = []
+
+    key = (interaction.guild_id, interaction.user.id)
+    names = _playlist_ac_cache.get(key)
+    if names is None:
+        try:
+            playlists = await PlaylistService.list_user_playlists(
+                interaction.guild_id, interaction.user.id
+            )
+        except Exception:
+            return []
+        names = [p.name for p in playlists]
+        _playlist_ac_cache[key] = names
+
     current_lower = current.lower()
-    for playlist in playlists:
-        if current_lower in playlist.name.lower():
-            choices.append(app_commands.Choice(name=playlist.name, value=playlist.name))
+    choices = []
+    for name in names:
+        if current_lower in name.lower():
+            choices.append(app_commands.Choice(name=name, value=name))
         if len(choices) >= 25:
             break
     return choices

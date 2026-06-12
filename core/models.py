@@ -158,6 +158,7 @@ class History(Base):
     __table_args__ = (
         Index("idx_history_guild", "guild_id"),
         Index("idx_history_guild_played", "guild_id", "played_at"),
+        Index("idx_history_guild_requester", "guild_id", "requested_by"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

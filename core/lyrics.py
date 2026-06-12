@@ -11,6 +11,25 @@ from loguru import logger
 # Suppress verbose logging from other libs during lyrics fetch
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
+# A single reused HTTP session avoids a TLS handshake per lyrics lookup.
+_session: aiohttp.ClientSession | None = None
+
+
+async def get_session() -> aiohttp.ClientSession:
+    """Return a lazily-created, reused aiohttp session."""
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession()
+    return _session
+
+
+async def close_session() -> None:
+    """Close the reused session (call on shutdown)."""
+    global _session
+    if _session and not _session.closed:
+        await _session.close()
+    _session = None
+
 
 class LyricsProvider:
     """Base class for lyrics providers."""
@@ -42,31 +61,29 @@ class LRCLibProvider(LyricsProvider):
     ) -> str | None:
         """Search LRCLib API."""
         try:
-            async with aiohttp.ClientSession() as session:
-                if artist and title and album and duration is not None:
-                    lyrics = await self._fetch_by_signature(
-                        session, artist, title, album, duration
-                    )
-                    if lyrics:
-                        logger.info("Found lyrics on LRCLib via exact signature")
-                        return lyrics
+            session = await get_session()
+            if artist and title and album and duration is not None:
+                lyrics = await self._fetch_by_signature(session, artist, title, album, duration)
+                if lyrics:
+                    logger.info("Found lyrics on LRCLib via exact signature")
+                    return lyrics
 
-                if title:
-                    lyrics = await self._search_records(
-                        session,
-                        track_name=title,
-                        artist_name=artist,
-                        album_name=album,
-                    )
-                    if lyrics:
-                        logger.info("Found lyrics on LRCLib via track search")
-                        return lyrics
+            if title:
+                lyrics = await self._search_records(
+                    session,
+                    track_name=title,
+                    artist_name=artist,
+                    album_name=album,
+                )
+                if lyrics:
+                    logger.info("Found lyrics on LRCLib via track search")
+                    return lyrics
 
-                if query:
-                    lyrics = await self._search_records(session, q=query)
-                    if lyrics:
-                        logger.info("Found lyrics on LRCLib via general search")
-                        return lyrics
+            if query:
+                lyrics = await self._search_records(session, q=query)
+                if lyrics:
+                    logger.info("Found lyrics on LRCLib via general search")
+                    return lyrics
         except TimeoutError:
             logger.debug("LRCLib search timed out")
         except Exception as e:

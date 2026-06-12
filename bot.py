@@ -434,6 +434,17 @@ class MusicBot(commands.Bot):
         from core.extractor import shutdown_pool
         shutdown_pool()
 
+        # Close shared HTTP sessions
+        from core.autodj.sources.lastfm import close_session as close_lastfm_session
+        from core.lyrics import close_session as close_lyrics_session
+        from core.spotify import SpotifyScraper
+
+        for closer in (close_lyrics_session, close_lastfm_session, SpotifyScraper.close):
+            try:
+                await closer()
+            except Exception:
+                logger.debug("Error closing HTTP session", exc_info=True)
+
         # Close database
         await close_db()
 

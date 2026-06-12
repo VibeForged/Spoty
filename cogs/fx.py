@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
+from cachetools import TTLCache
 from discord import app_commands
 from discord.ext import commands
 
@@ -25,19 +26,32 @@ if TYPE_CHECKING:
 # Cap on custom FX presets per guild (prevents unbounded DB growth / slow listings).
 MAX_CUSTOM_PRESETS = 50
 
+# Short-TTL cache of per-guild custom preset names, so autocomplete (which fires
+# per keystroke) doesn't hit the DB on every character.
+_preset_name_cache: TTLCache[int, list[str]] = TTLCache(maxsize=500, ttl=30)
+
+
+async def _guild_custom_preset_names(guild_id: int) -> list[str]:
+    cached = _preset_name_cache.get(guild_id)
+    if cached is not None:
+        return cached
+    try:
+        from core.repositories import FXPresetRepo
+
+        names = [p.name for p in await FXPresetRepo.list_for_guild(guild_id)]
+    except Exception:
+        return []
+    _preset_name_cache[guild_id] = names
+    return names
+
 
 async def _fx_all_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
     """Autocomplete over built-in + this guild's custom preset names."""
     names = list(BUILTIN_PRESETS.keys())
-    try:
-        if interaction.guild_id:
-            from core.repositories import FXPresetRepo
-
-            names.extend(p.name for p in await FXPresetRepo.list_for_guild(interaction.guild_id))
-    except Exception:
-        pass
+    if interaction.guild_id:
+        names.extend(await _guild_custom_preset_names(interaction.guild_id))
     cur = current.lower()
     matches = [n for n in sorted(set(names)) if cur in n.lower()][:25]
     return [app_commands.Choice(name=n, value=n) for n in matches]
@@ -47,14 +61,7 @@ async def _fx_custom_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
     """Autocomplete over only this guild's custom preset names (for delete/rename)."""
-    names: list[str] = []
-    try:
-        if interaction.guild_id:
-            from core.repositories import FXPresetRepo
-
-            names = [p.name for p in await FXPresetRepo.list_for_guild(interaction.guild_id)]
-    except Exception:
-        pass
+    names = await _guild_custom_preset_names(interaction.guild_id) if interaction.guild_id else []
     cur = current.lower()
     matches = [n for n in sorted(names) if cur in n.lower()][:25]
     return [app_commands.Choice(name=n, value=n) for n in matches]
