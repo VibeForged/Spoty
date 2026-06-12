@@ -78,6 +78,10 @@ class QueueCog(commands.Cog, name="Queue"):
         if not player:
             raise BotNotConnectedError()
 
+        if from_pos < 1 or to_pos < 1:
+            await ctx.send("Positions must be 1 or greater.", ephemeral=True)
+            return
+
         track = player.queue.get(from_pos - 1)
         if not track:
             await ctx.send(f"No track at position {from_pos}.", ephemeral=True)

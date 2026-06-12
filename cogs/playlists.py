@@ -75,6 +75,11 @@ class Playlists(commands.Cog):
     @cooldown(1, 5.0)
     async def playlist_delete(self, ctx: commands.Context, *, name: str) -> None:
         """Delete a playlist you own."""
+        from core.ui.confirm import confirm_action
+
+        if not await confirm_action(ctx, f"Delete playlist **{name}**? This cannot be undone."):
+            await ctx.send("Cancelled.", ephemeral=True)
+            return
         await PlaylistService.delete_playlist(ctx.guild.id, ctx.author.id, name)
         await ctx.send(f"Deleted playlist **{name}**")
 

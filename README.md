@@ -88,10 +88,15 @@ See `.env.example` for all related variables.
 ## Commands
 
 ### Music
-`play`, `pause`, `resume`, `stop`, `skip`, `seek`, `volume`, `nowplaying`
+`play`, `pause`, `resume`, `stop`, `skip`, `seek`, `volume`, `nowplaying`, `join`, `leave`, `replay`, `jump`, `panel`
+
+`skip` is instant for DJs/admins; if a server sets a vote threshold, other listeners vote to skip.
 
 ### Queue
-`queue`, `remove`, `clear`, `shuffle`, `loop`, `move`
+`queue`, `queuesearch`, `remove`, `clear`, `shuffle`, `loop`, `move`, `grab`
+
+### Auto-DJ
+`autodj start`, `autodj stop`, `autodj status`, `autodj skip`, `autodj reset`
 
 ### Playlists
 `playlist create`, `playlist delete`, `playlist add`, `playlist remove`, `playlist list`, `playlist view`, `playlist play`, `playlist share`, `playlist import`, `playlist copy`, `playlist shuffle`, `playlist like`, `playlist dislike`, `playlist rename`, `playlist info`
@@ -99,16 +104,16 @@ See `.env.example` for all related variables.
 Playlists are private by default. Names are stored with spaces converted to underscores for prefix-command use. A share code allows other users to import or copy a playlist, but not edit it.
 
 ### Effects
-`setfx`, `clearfx`, `currenteffects`, `fxpreset list`, `fxpreset create`, `fxpreset delete`, `fxpreset builder`
+`setfx`, `clearfx`, `currenteffects`, `fxpreset list`, `fxpreset create`, `fxpreset delete`, `fxpreset rename`, `fxpreset builder`
 
 ### Settings
-`settings view`, `settings default_volume`, `prefix`, `set_dj_role`, `lockqueue`
+`settings view`, `settings default_volume`, `settings announce_songs`, `settings interactive_buttons`, `settings set_music_channel`, `settings 247`, `settings skip_vote`, `settings lone_user_dj`, `setup`, `prefix`, `set_dj_role`, `lockqueue`
 
 ### Permissions
 `permissions view`, `permissions set`, `permissions remove`, `permissions reset`
 
 ### Utility
-`help`, `ping`, `botinfo`, `uptime`, `lyrics`, `history`, `stats`, `musicquiz`, `ambience`, `backend`
+`help`, `ping`, `botinfo`, `uptime`, `lyrics`, `history`, `stats`, `musicquiz`, `ambience`, `backend`, `feedback`, `voiceregion`
 
 ## Development
 

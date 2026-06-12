@@ -136,6 +136,13 @@ class MusicBot(commands.Bot):
         logger.info("Setup complete — {} cogs loaded", len(self.extensions))
         logger.info("Audio backend status: {}", self.backend_manager.backend_status())
 
+        # Sync slash commands so they appear without a manual /sync (non-fatal).
+        try:
+            synced = await self.tree.sync()
+            logger.info("Synced {} application (slash) commands", len(synced))
+        except Exception:
+            logger.warning("Failed to sync application commands", exc_info=True)
+
         await self._restore_panels()
 
     async def _restore_panels(self) -> None:

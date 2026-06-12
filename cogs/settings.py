@@ -153,7 +153,9 @@ class Settings(commands.Cog):
     @cooldown(1, 5.0)
     async def settings_default_volume(self, ctx: commands.Context, volume: int) -> None:
         """Set the default volume for new playback sessions."""
-        volume = max(0, min(volume, 100))
+        if volume < 0 or volume > 100:
+            await ctx.send("Volume must be between 0 and 100.", ephemeral=True)
+            return
         from core.repositories import GuildSettingsRepo
 
         await GuildSettingsRepo.update(ctx.guild.id, default_volume=volume)
@@ -162,6 +164,12 @@ class Settings(commands.Cog):
 
     @settings.command(name="announce_songs", description="Toggle now-playing announcements")
     @app_commands.describe(enabled="on or off")
+    @app_commands.choices(
+        enabled=[
+            app_commands.Choice(name="on", value="on"),
+            app_commands.Choice(name="off", value="off"),
+        ]
+    )
     @is_admin()
     @cooldown(1, 5.0)
     async def settings_announce(self, ctx: commands.Context, enabled: str) -> None:
@@ -175,6 +183,12 @@ class Settings(commands.Cog):
 
     @settings.command(name="interactive_buttons", description="Toggle now-playing buttons")
     @app_commands.describe(enabled="on or off")
+    @app_commands.choices(
+        enabled=[
+            app_commands.Choice(name="on", value="on"),
+            app_commands.Choice(name="off", value="off"),
+        ]
+    )
     @is_admin()
     @cooldown(1, 5.0)
     async def settings_buttons(self, ctx: commands.Context, enabled: str) -> None:
@@ -288,6 +302,12 @@ class Settings(commands.Cog):
     @app_commands.describe(
         command="Command name", role="Role to set permission for", action="allow or deny"
     )
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="allow", value="allow"),
+            app_commands.Choice(name="deny", value="deny"),
+        ]
+    )
     @cooldown(1, 5.0)
     async def permissions_set(
         self, ctx: commands.Context, command: str, role: discord.Role, action: str
@@ -347,6 +367,13 @@ class Settings(commands.Cog):
             count = await PermissionRepo.reset_command(ctx.guild.id, command)
             await ctx.send(f"Removed **{count}** override(s) for **{command}**.")
         else:
+            from core.ui.confirm import confirm_action
+
+            if not await confirm_action(
+                ctx, "Reset **all** permission overrides for this server? This cannot be undone."
+            ):
+                await ctx.send("Cancelled.", ephemeral=True)
+                return
             count = await PermissionRepo.reset_all(ctx.guild.id)
             await ctx.send(f"Removed **{count}** permission override(s) for this server.")
 

@@ -268,6 +268,7 @@ class Music(commands.Cog):
         )
 
     @commands.hybrid_command(name="queue", aliases=["q"], description="Show the current queue")
+    @app_commands.describe(page="Page number (1-indexed)")
     @cooldown(1, 3.0)
     async def queue(self, ctx: commands.Context, page: int = 1) -> None:
         """Show the current music queue."""
@@ -324,6 +325,7 @@ class Music(commands.Cog):
         await ctx.send(embed=embed, view=view)
 
     @commands.hybrid_command(name="panel", description="Re-summon the persistent player control panel")
+    @is_dj()
     @cooldown(1, 10.0)
     async def panel(self, ctx: commands.Context) -> None:
         """Summon the Player Control Panel to the bottom of the chat."""
@@ -409,9 +411,15 @@ class Music(commands.Cog):
             raise NothingPlayingError()
 
         seconds = _parse_time(position)
-        if seconds is None:
-            from core.errors import InvalidSeekPosition
-            raise InvalidSeekPosition()
+        if seconds is None or seconds < 0:
+            from core.errors import InvalidSeekPositionError
+
+            raise InvalidSeekPositionError()
+
+        # Clamp to the track length so we never seek past the end.
+        duration = player.current.duration
+        if duration is not None and seconds > duration:
+            seconds = duration
 
         await player.seek(seconds * 1000)
         await ctx.send(f"Seeked to `{_format_time(seconds)}`")

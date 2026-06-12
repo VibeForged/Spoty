@@ -26,6 +26,40 @@ if TYPE_CHECKING:
 MAX_CUSTOM_PRESETS = 50
 
 
+async def _fx_all_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    """Autocomplete over built-in + this guild's custom preset names."""
+    names = list(BUILTIN_PRESETS.keys())
+    try:
+        if interaction.guild_id:
+            from core.repositories import FXPresetRepo
+
+            names.extend(p.name for p in await FXPresetRepo.list_for_guild(interaction.guild_id))
+    except Exception:
+        pass
+    cur = current.lower()
+    matches = [n for n in sorted(set(names)) if cur in n.lower()][:25]
+    return [app_commands.Choice(name=n, value=n) for n in matches]
+
+
+async def _fx_custom_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    """Autocomplete over only this guild's custom preset names (for delete/rename)."""
+    names: list[str] = []
+    try:
+        if interaction.guild_id:
+            from core.repositories import FXPresetRepo
+
+            names = [p.name for p in await FXPresetRepo.list_for_guild(interaction.guild_id)]
+    except Exception:
+        pass
+    cur = current.lower()
+    matches = [n for n in sorted(names) if cur in n.lower()][:25]
+    return [app_commands.Choice(name=n, value=n) for n in matches]
+
+
 class FX(commands.Cog):
     """Audio effects commands."""
 
@@ -42,6 +76,7 @@ class FX(commands.Cog):
 
     @commands.hybrid_command(name="setfx", description="Apply an audio effect preset")
     @app_commands.describe(preset="Name of the preset to apply")
+    @app_commands.autocomplete(preset=_fx_all_autocomplete)
     @is_dj()
     @cooldown(1, 3.0)
     async def setfx(self, ctx: commands.Context, preset: str) -> None:
@@ -109,7 +144,13 @@ class FX(commands.Cog):
             raise BotNotConnectedError()
 
         if not player.active_filters:
-            await ctx.send("No active effects.")
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Active Effects",
+                    description="No active effects.",
+                    color=discord.Color.purple(),
+                )
+            )
             return
 
         filters = ", ".join(player.active_filters)
@@ -205,6 +246,7 @@ class FX(commands.Cog):
 
     @fxpreset.command(name="delete", description="Delete a custom FX preset")
     @app_commands.describe(name="Preset name to delete")
+    @app_commands.autocomplete(name=_fx_custom_autocomplete)
     @is_dj()
     @cooldown(1, 5.0)
     async def fxpreset_delete(self, ctx: commands.Context, name: str) -> None:
@@ -218,6 +260,7 @@ class FX(commands.Cog):
 
     @fxpreset.command(name="rename", description="Rename a custom FX preset")
     @app_commands.describe(old_name="Current preset name", new_name="New preset name")
+    @app_commands.autocomplete(old_name=_fx_custom_autocomplete)
     @is_dj()
     @cooldown(1, 5.0)
     async def fxpreset_rename(self, ctx: commands.Context, old_name: str, new_name: str) -> None:

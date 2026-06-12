@@ -382,6 +382,13 @@ class Utility(commands.Cog):
 
     @commands.hybrid_command(name="ambience", description="Play ambient background sounds")
     @app_commands.describe(action="list, play, or stop", sound="Sound name (rain, cafe, etc.)")
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="list", value="list"),
+            app_commands.Choice(name="play", value="play"),
+            app_commands.Choice(name="stop", value="stop"),
+        ]
+    )
     @cooldown(1, 5.0)
     async def ambience(self, ctx: commands.Context, action: str, sound: str | None = None) -> None:
         """Play ambient background sounds."""
