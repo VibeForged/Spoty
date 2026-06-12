@@ -1,6 +1,8 @@
 # Discord
 discord.py[voice]>=2.4.0
-PyNaCl>=1.6.2  # 1.6.2 fixes CVE-2025-69277
+# discord.py[voice] caps PyNaCl <1.6, so we can't take 1.6.2 (CVE-2025-69277)
+# until discord.py loosens that constraint. Revisit when it does.
+PyNaCl>=1.5,<1.6
 
 # Audio
 # yt-dlp must stay recent for YouTube; bump this floor and rebuild to update
