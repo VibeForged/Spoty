@@ -165,6 +165,19 @@ class MusicPlayer:
         self._skip_votes.add(user_id)
         return len(self._skip_votes)
 
+    async def play_previous(self) -> Track | None:
+        """Replay the most recent track from history. Returns it, or None if empty."""
+        prev = self.queue.previous()
+        if prev is None:
+            return None
+
+        # Re-queue the current track to play after the previous one, then jump back.
+        if self.current:
+            self.queue.add_top(self.current)
+        self.queue.add_top(prev)
+        await self.skip()
+        return prev
+
     async def skip(self) -> Track | None:
         skipped = self.current
         if self._play_task:

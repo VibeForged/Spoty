@@ -169,6 +169,20 @@ class MusicQueue:
         self._tracks.clear()
         return count
 
+    def dedupe(self) -> int:
+        """Remove duplicate tracks (by URL), keeping the first. Returns the count removed."""
+        seen: set[str] = set()
+        unique: deque[Track] = deque()
+        removed = 0
+        for track in self._tracks:
+            if track.url in seen:
+                removed += 1
+                continue
+            seen.add(track.url)
+            unique.append(track)
+        self._tracks = unique
+        return removed
+
     def get_page(self, page: int, per_page: int = 10) -> tuple[list[Track], int]:
         """Get a page of tracks for display.
 

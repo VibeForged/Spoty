@@ -69,6 +69,30 @@ class Playlists(commands.Cog):
             )
         )
 
+    @playlist.command(name="save", description="Save the current queue as a new playlist")
+    @app_commands.describe(name="Name for the new playlist")
+    @cooldown(1, 5.0)
+    async def playlist_save(self, ctx: commands.Context, *, name: str) -> None:
+        """Save the currently playing track + queue as a new playlist."""
+        player = self.bot.get_player(ctx.guild.id)
+        if not player or (not player.current and player.queue.is_empty):
+            await ctx.send("Nothing is playing or queued to save.", ephemeral=True)
+            return
+
+        items = []
+        if player.current:
+            items.append(PlaylistService.item_from_track(player.current))
+        items.extend(PlaylistService.item_from_track(t) for t in player.queue.tracks)
+
+        playlist = await PlaylistService.import_items(ctx.guild.id, ctx.author.id, name, items)
+        await ctx.send(
+            embed=discord.Embed(
+                title="Playlist Saved",
+                description=f"Saved **{playlist.track_count}** tracks as **{playlist.name}**",
+                color=discord.Color.green(),
+            )
+        )
+
     @playlist.command(name="delete", description="Delete a playlist")
     @app_commands.describe(name="Name of the playlist to delete")
     @app_commands.autocomplete(name=playlist_autocomplete)

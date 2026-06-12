@@ -284,11 +284,31 @@ class Utility(commands.Cog):
         embed.description = "\n".join(lines)
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="stats", description="Show server music statistics")
+    @commands.hybrid_command(name="stats", description="Show server or user music statistics")
+    @app_commands.describe(member="Show stats for a specific member (optional)")
     @cooldown(1, 10.0)
-    async def stats(self, ctx: commands.Context) -> None:
-        """Show music usage statistics for this server."""
-        from core.repositories import StatsRepo
+    async def stats(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
+        """Show music usage statistics for this server, or for a specific member."""
+        from core.repositories import HistoryRepo, StatsRepo
+
+        if member is not None:
+            plays = await HistoryRepo.get_user_play_count(ctx.guild.id, member.id)
+            if plays == 0:
+                await ctx.send(f"{member.display_name} hasn't requested any tracks yet.")
+                return
+            top = await HistoryRepo.get_user_top_tracks(ctx.guild.id, member.id)
+            embed = discord.Embed(
+                title=f"Stats for {member.display_name}", color=discord.Color.gold()
+            )
+            embed.add_field(name="Tracks Requested", value=str(plays), inline=True)
+            if top:
+                embed.add_field(
+                    name="Top Tracks",
+                    value="\n".join(f"`{count}x` {title[:60]}" for title, count in top),
+                    inline=False,
+                )
+            await ctx.send(embed=embed)
+            return
 
         stats = await StatsRepo.get(ctx.guild.id)
         if not stats:
@@ -304,6 +324,32 @@ class Utility(commands.Cog):
             name="Total Duration",
             value=f"{hours}h {minutes}m",
             inline=True,
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="leaderboard", aliases=["lb"], description="Top music requesters")
+    @cooldown(1, 10.0)
+    async def leaderboard(self, ctx: commands.Context) -> None:
+        """Show the top track requesters in this server."""
+        from core.repositories import HistoryRepo
+
+        top = await HistoryRepo.get_top_requesters(ctx.guild.id, limit=10)
+        if not top:
+            await ctx.send("No play history yet. Request some tracks first!")
+            return
+
+        medals = ["🥇", "🥈", "🥉"]
+        lines = []
+        for i, (user_id, count) in enumerate(top):
+            rank = medals[i] if i < len(medals) else f"`#{i + 1}`"
+            member = ctx.guild.get_member(user_id)
+            name = member.display_name if member else f"User {user_id}"
+            lines.append(f"{rank} **{name}** — {count} tracks")
+
+        embed = discord.Embed(
+            title="🏆 Top Requesters",
+            description="\n".join(lines),
+            color=discord.Color.gold(),
         )
         await ctx.send(embed=embed)
 

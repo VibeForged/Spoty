@@ -143,6 +143,68 @@ class Music(commands.Cog):
                 embed.add_field(name="Requested by", value=ctx.author.display_name, inline=True)
                 await ctx.send(embed=embed)
 
+    @commands.hybrid_command(
+        name="playnext", aliases=["pn"], description="Add a song to the front of the queue"
+    )
+    @app_commands.describe(query="Song name or URL to play next")
+    @is_dj()
+    @cooldown(1, 3.0)
+    async def playnext(self, ctx: commands.Context, *, query: str) -> None:
+        """Search a track and put it at the front of the queue (plays after the current song)."""
+        await ctx.defer()
+
+        player = await self._get_or_create_player(ctx)
+        player.text_channel = ctx.channel
+
+        track = await search_track(query)
+        if track is None:
+            raise TrackNotFoundError(query)
+        track.requester_id = ctx.author.id
+        track.requester_name = ctx.author.display_name
+
+        if not player.is_playing and not player.is_paused:
+            player.queue.add(track)
+            await player.play_next()
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Now Playing",
+                    description=f"**[{track.title}]({track.url})**",
+                    color=discord.Color.green(),
+                )
+            )
+        else:
+            player.queue.add_top(track)
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Playing Next",
+                    description=f"**[{track.title}]({track.url})** will play next",
+                    color=discord.Color.blue(),
+                )
+            )
+
+    @commands.hybrid_command(
+        name="previous", aliases=["back", "prev"], description="Play the previous track"
+    )
+    @is_dj()
+    @cooldown(1, 2.0)
+    async def previous(self, ctx: commands.Context) -> None:
+        """Replay the track that played before the current one."""
+        player = self.bot.get_player(ctx.guild.id)
+        if not player:
+            raise BotNotConnectedError()
+
+        prev = await player.play_previous()
+        if prev is None:
+            await ctx.send("No previous track in history.", ephemeral=True)
+            return
+        await ctx.send(
+            embed=discord.Embed(
+                title="Playing Previous",
+                description=f"**[{prev.title}]({prev.url})**",
+                color=discord.Color.green(),
+            )
+        )
+
     @commands.hybrid_command(name="skip", aliases=["s"], description="Skip the current track")
     @cooldown(1, 2.0)
     async def skip(self, ctx: commands.Context) -> None:

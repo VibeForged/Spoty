@@ -188,3 +188,13 @@ class TestMusicQueue:
         q.add(Track(title="C", url="c", duration=None))
 
         assert q.total_duration == 300
+
+    def test_dedupe_removes_duplicate_urls(self):
+        q = MusicQueue()
+        q.add(Track(title="A", url="u1"))
+        q.add(Track(title="B", url="u2"))
+        q.add(Track(title="A again", url="u1"))
+
+        removed = q.dedupe()
+        assert removed == 1
+        assert [t.url for t in q.tracks] == ["u1", "u2"]

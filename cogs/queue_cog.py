@@ -158,6 +158,21 @@ class QueueCog(commands.Cog, name="Queue"):
             embed.set_footer(text=f"Showing 25 of {len(matches)} matches")
         await ctx.send(embed=embed)
 
+    @commands.hybrid_command(name="dedupe", description="Remove duplicate tracks from the queue")
+    @is_dj()
+    @cooldown(1, 5.0)
+    async def dedupe(self, ctx: commands.Context) -> None:
+        """Remove duplicate tracks (same URL) from the queue."""
+        player = self.bot.get_player(ctx.guild.id)
+        if not player:
+            raise BotNotConnectedError()
+
+        removed = player.queue.dedupe()
+        if removed:
+            await ctx.send(f"Removed **{removed}** duplicate track(s) from the queue.")
+        else:
+            await ctx.send("No duplicate tracks found.", ephemeral=True)
+
     @commands.hybrid_command(name="grab", description="DM yourself the current track info")
     @cooldown(1, 5.0)
     async def grab(self, ctx: commands.Context) -> None:

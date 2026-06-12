@@ -277,6 +277,25 @@ def test_track_roundtrip():
 
 
 @pytest.mark.asyncio
+class TestHistoryAggregates:
+    async def test_requesters_and_user_stats(self, db):
+        from core.repositories import HistoryRepo
+
+        await HistoryRepo.add(1, "Song A", "u1", 100, 50)
+        await HistoryRepo.add(1, "Song A", "u2", 100, 50)
+        await HistoryRepo.add(1, "Song B", "u3", 100, 60)
+
+        top = await HistoryRepo.get_top_requesters(1)
+        assert top[0] == (50, 2)
+
+        assert await HistoryRepo.get_user_play_count(1, 50) == 2
+        assert await HistoryRepo.get_user_play_count(1, 999) == 0
+
+        user_top = await HistoryRepo.get_user_top_tracks(1, 50)
+        assert user_top[0] == ("Song A", 2)
+
+
+@pytest.mark.asyncio
 class TestQueueStateRepo:
     async def test_save_upsert_get_delete(self, db):
         from core.repositories import QueueStateRepo

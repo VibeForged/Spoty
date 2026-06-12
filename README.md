@@ -88,18 +88,20 @@ See `.env.example` for all related variables.
 ## Commands
 
 ### Music
-`play`, `pause`, `resume`, `stop`, `skip`, `seek`, `volume`, `nowplaying`, `join`, `leave`, `replay`, `jump`, `panel`
+`play`, `playnext`, `previous`, `pause`, `resume`, `stop`, `skip`, `seek`, `volume`, `nowplaying`, `join`, `leave`, `replay`, `jump`, `panel`
 
 `skip` is instant for DJs/admins; if a server sets a vote threshold, other listeners vote to skip.
 
 ### Queue
-`queue`, `queuesearch`, `remove`, `clear`, `shuffle`, `loop`, `move`, `grab`
+`queue`, `queuesearch`, `remove`, `clear`, `dedupe`, `shuffle`, `loop`, `move`, `grab`
 
 ### Auto-DJ
-`autodj start`, `autodj stop`, `autodj status`, `autodj skip`, `autodj reset`
+`autodj start`, `autodj stop`, `autodj status`, `autodj skip`, `autodj reset`, `autodj signals`
 
 ### Playlists
-`playlist create`, `playlist delete`, `playlist add`, `playlist remove`, `playlist list`, `playlist view`, `playlist play`, `playlist share`, `playlist import`, `playlist copy`, `playlist shuffle`, `playlist like`, `playlist dislike`, `playlist rename`, `playlist info`
+`playlist create`, `playlist save`, `playlist delete`, `playlist add`, `playlist remove`, `playlist list`, `playlist view`, `playlist play`, `playlist share`, `playlist import`, `playlist copy`, `playlist shuffle`, `playlist like`, `playlist dislike`, `playlist rename`, `playlist info`
+
+`playlist save` snapshots the current queue into a new playlist.
 
 Playlists are private by default. Names are stored with spaces converted to underscores for prefix-command use. A share code allows other users to import or copy a playlist, but not edit it.
 
@@ -113,7 +115,7 @@ Playlists are private by default. Names are stored with spaces converted to unde
 `permissions view`, `permissions set`, `permissions remove`, `permissions reset`
 
 ### Utility
-`help`, `ping`, `botinfo`, `uptime`, `lyrics`, `history`, `stats`, `musicquiz`, `ambience`, `backend`, `feedback`, `voiceregion`
+`help`, `ping`, `botinfo`, `uptime`, `lyrics`, `history`, `stats`, `leaderboard`, `musicquiz`, `ambience`, `backend`, `feedback`, `voiceregion`
 
 ## Development
 

@@ -271,5 +271,43 @@ class AutoDJ(commands.Cog):
         )
 
 
+    @autodj.command(name="signals", description="Show what Auto-DJ has learned for this server")
+    @cooldown(1, 5.0)
+    async def autodj_signals(self, ctx: commands.Context) -> None:
+        """Show the most-completed and most-skipped tracks/artists Auto-DJ has learned."""
+        from core.repositories import AutoDJFeedbackRepo
+
+        signals = await AutoDJFeedbackRepo.get_signals_for_session(ctx.guild.id)
+        if not signals:
+            await ctx.send("Auto-DJ hasn't learned anything for this server yet.", ephemeral=True)
+            return
+
+        skips: dict[str, int] = {}
+        completes: dict[str, int] = {}
+        for signal in signals:
+            label = signal.artist_hint or signal.track_url
+            bucket = skips if signal.signal == "skip" else completes
+            bucket[label] = bucket.get(label, 0) + 1
+
+        top_completes = sorted(completes.items(), key=lambda kv: -kv[1])[:5]
+        top_skips = sorted(skips.items(), key=lambda kv: -kv[1])[:5]
+
+        embed = discord.Embed(title="🤖 Auto-DJ Learning", color=discord.Color.blurple())
+        if top_completes:
+            embed.add_field(
+                name="👍 Most completed",
+                value="\n".join(f"`{count}x` {label[:60]}" for label, count in top_completes),
+                inline=False,
+            )
+        if top_skips:
+            embed.add_field(
+                name="👎 Most skipped",
+                value="\n".join(f"`{count}x` {label[:60]}" for label, count in top_skips),
+                inline=False,
+            )
+        embed.set_footer(text=f"{len(signals)} signals recorded")
+        await ctx.send(embed=embed)
+
+
 async def setup(bot: MusicBot) -> None:
     await bot.add_cog(AutoDJ(bot))

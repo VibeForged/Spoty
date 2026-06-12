@@ -119,6 +119,45 @@ class HistoryRepo:
             return list(result.scalars().all())
 
     @staticmethod
+    async def get_top_requesters(guild_id: int, limit: int = 10) -> list[tuple[int, int]]:
+        """Return (user_id, play_count) for the top requesters in a guild."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(History.requested_by, sa_func.count(History.id).label("plays"))
+                .where(History.guild_id == guild_id, History.requested_by != 0)
+                .group_by(History.requested_by)
+                .order_by(sa_func.count(History.id).desc())
+                .limit(limit)
+            )
+            return [(row[0], row[1]) for row in result.all()]
+
+    @staticmethod
+    async def get_user_play_count(guild_id: int, user_id: int) -> int:
+        """Return how many tracks a user has requested in a guild."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(sa_func.count(History.id)).where(
+                    History.guild_id == guild_id, History.requested_by == user_id
+                )
+            )
+            return int(result.scalar_one() or 0)
+
+    @staticmethod
+    async def get_user_top_tracks(
+        guild_id: int, user_id: int, limit: int = 5
+    ) -> list[tuple[str, int]]:
+        """Return (track_title, play_count) for a user's most-requested tracks in a guild."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(History.track_title, sa_func.count(History.id).label("plays"))
+                .where(History.guild_id == guild_id, History.requested_by == user_id)
+                .group_by(History.track_title)
+                .order_by(sa_func.count(History.id).desc())
+                .limit(limit)
+            )
+            return [(row[0], row[1]) for row in result.all()]
+
+    @staticmethod
     async def get_top_tracks(
         guild_id: int,
         limit: int = 30,
