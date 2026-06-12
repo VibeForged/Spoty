@@ -2,12 +2,12 @@ FROM python:3.12-slim
 
 # System deps:
 #   ffmpeg                 - FFmpeg audio backend / fallback
-#   openjdk-17-jre-headless- run bundled Lavalink (Lavalink 4 needs Java 17+)
+#   openjdk-21-jre-headless- run bundled Lavalink (Lavalink 4 needs Java 17+)
 #   nodejs (20, NodeSource)- run the browserless PO-token refresher sidecar
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
-        openjdk-17-jre-headless \
+        openjdk-21-jre-headless \
         curl ca-certificates gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
