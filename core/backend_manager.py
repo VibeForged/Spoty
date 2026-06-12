@@ -34,10 +34,10 @@ class BackendManager:
 
         try:
             logger.debug(
-                "Effective Lavalink config: host={}, port={}, pass={}, secure={}",
+                "Effective Lavalink config: host={}, port={}, password={}, secure={}",
                 self.bot.config.lavalink_host,
                 self.bot.config.lavalink_port,
-                self.bot.config.lavalink_password,
+                "<set>" if self.bot.config.lavalink_password else "<unset>",
                 self.bot.config.lavalink_secure,
             )
 

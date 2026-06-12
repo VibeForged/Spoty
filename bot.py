@@ -14,9 +14,9 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from loguru import logger
 
-from config import BotConfig
+from config import BotConfig, get_config
 from core.backend_manager import BackendManager
-from core.database import close_db, init_db
+from core.database import close_db, init_db, run_migrations
 from core.models import GuildSettings
 from core.player import MusicPlayer
 from core.repositories import GuildSettingsRepo
@@ -360,10 +360,13 @@ def main() -> None:
     # Set up basic logging format for stdout
     logger.remove()
 
-    config = BotConfig()
+    config = get_config()
     setup_logging(config)
 
     logger.info("Starting Discord Music Bot...")
+
+    # Apply database migrations (synchronously, before the bot event loop starts).
+    run_migrations(config.database_url)
 
     bot = MusicBot(config)
 

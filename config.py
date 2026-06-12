@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -53,7 +54,9 @@ class BotConfig(BaseSettings):
     feedback_channel_id: int | None = None
 
     # --- Auto-Update ---
-    ytdlp_auto_update: bool = True
+    # Off by default: running `pip install --upgrade yt-dlp` at runtime is unsafe
+    # and non-reproducible. Update yt-dlp by bumping the pin and rebuilding instead.
+    ytdlp_auto_update: bool = False
 
     @field_validator("bot_owner_id", "feedback_channel_id", mode="before")
     @classmethod
@@ -77,3 +80,13 @@ class BotConfig(BaseSettings):
             return value.replace("postgres://", "postgresql+asyncpg://", 1)
 
         return value
+
+
+@lru_cache(maxsize=1)
+def get_config() -> BotConfig:
+    """Return the process-wide BotConfig singleton.
+
+    Avoids re-parsing the .env file on every call (e.g. on hot paths like the
+    yt-dlp extractor and Auto-DJ sources).
+    """
+    return BotConfig()

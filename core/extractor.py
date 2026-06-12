@@ -10,7 +10,7 @@ import yt_dlp
 from cachetools import TTLCache
 from loguru import logger
 
-from config import BotConfig
+from config import get_config
 from core.track import Track
 
 # Bounded thread pool for yt-dlp extraction (sync library)
@@ -22,7 +22,7 @@ _extraction_cache: TTLCache[str, dict[str, Any]] = TTLCache(maxsize=200, ttl=600
 # yt-dlp options for audio extraction (no download)
 def _get_ydl_opts() -> dict[str, Any]:
     """Get yt-dlp options with optional cookie support."""
-    config = BotConfig()
+    config = get_config()
     opts = {
         "format": "bestaudio/best",
         "noplaylist": True,

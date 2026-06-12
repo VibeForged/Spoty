@@ -41,7 +41,8 @@ python -m PyInstaller \
   --hidden-import aiosqlite \
   --add-data "$ROOT/.env.example:." \
   --add-data "$ROOT/LavaLink:Lavalink" \
-  --add-data "$ROOT/alembic:alembic" \
+  --add-data "$ROOT/migrations:migrations" \
+  --add-data "$ROOT/alembic.ini:." \
   "$ROOT/launcher.py"
 
 if [ $? -ne 0 ]; then

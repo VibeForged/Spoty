@@ -10,7 +10,7 @@ a = Analysis(
     ['E:\\__PROJECTS__\\__PROGRAMMING__\\PERSONAL\\__BOTS__\\__DISCORD__\\Spoty_Discord_Bot\\launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('E:\\__PROJECTS__\\__PROGRAMMING__\\PERSONAL\\__BOTS__\\__DISCORD__\\Spoty_Discord_Bot\\.env.example', '.'), ('E:\\__PROJECTS__\\__PROGRAMMING__\\PERSONAL\\__BOTS__\\__DISCORD__\\Spoty_Discord_Bot\\LavaLink', 'Lavalink'), ('E:\\__PROJECTS__\\__PROGRAMMING__\\PERSONAL\\__BOTS__\\__DISCORD__\\Spoty_Discord_Bot\\alembic', 'alembic')],
+    datas=[('E:\\__PROJECTS__\\__PROGRAMMING__\\PERSONAL\\__BOTS__\\__DISCORD__\\Spoty_Discord_Bot\\.env.example', '.'), ('E:\\__PROJECTS__\\__PROGRAMMING__\\PERSONAL\\__BOTS__\\__DISCORD__\\Spoty_Discord_Bot\\LavaLink', 'Lavalink'), ('E:\\__PROJECTS__\\__PROGRAMMING__\\PERSONAL\\__BOTS__\\__DISCORD__\\Spoty_Discord_Bot\\migrations', 'migrations'), ('E:\\__PROJECTS__\\__PROGRAMMING__\\PERSONAL\\__BOTS__\\__DISCORD__\\Spoty_Discord_Bot\\alembic.ini', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

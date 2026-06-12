@@ -1,9 +1,11 @@
 # Discord
 discord.py[voice]>=2.4.0
-PyNaCl>=1.5
+PyNaCl>=1.6.2  # 1.6.2 fixes CVE-2025-69277
 
 # Audio
-yt-dlp>=2024.0
+# yt-dlp must stay recent for YouTube; bump this floor and rebuild to update
+# (runtime auto-update is disabled by default — see config.ytdlp_auto_update).
+yt-dlp>=2026.6.9
 wavelink>=3.4.0
 
 # Database

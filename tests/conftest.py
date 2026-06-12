@@ -26,6 +26,6 @@ async def db():
     """Initialize an in-memory SQLite database for testing."""
     from core.database import close_db, init_db
 
-    await init_db("sqlite+aiosqlite:///:memory:")
+    await init_db("sqlite+aiosqlite:///:memory:", create_schema=True)
     yield
     await close_db()

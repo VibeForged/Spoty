@@ -110,7 +110,8 @@ python -m PyInstaller `
     --hidden-import aiosqlite `
     --add-data "$Root\.env.example;." `
     --add-data "$Root\LavaLink;Lavalink" `
-    --add-data "$Root\alembic;alembic" `
+    --add-data "$Root\migrations;migrations" `
+    --add-data "$Root\alembic.ini;." `
     (Join-Path $Root "launcher.py")
 
 if ($LASTEXITCODE -ne 0) {

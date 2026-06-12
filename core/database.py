@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from loguru import logger
-from sqlalchemy import event, inspect, text
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -18,11 +20,16 @@ _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
-async def init_db(database_url: str) -> None:
-    """Initialize the database engine and create tables.
+async def init_db(database_url: str, create_schema: bool = False) -> None:
+    """Initialize the database engine and session factory.
+
+    Schema is owned by Alembic in production (see :func:`run_migrations`). The
+    ``create_schema`` flag is for tests / throwaway databases that build tables
+    directly from model metadata instead of running migrations.
 
     Args:
         database_url: SQLAlchemy-compatible async database URL.
+        create_schema: If True, create all tables from model metadata.
     """
     global _engine, _session_factory
 
@@ -47,70 +54,52 @@ async def init_db(database_url: str) -> None:
         expire_on_commit=False,
     )
 
-    # Create all tables
-    from core.models import Base
-
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await _run_schema_upgrades(conn)
+    if create_schema:
+        await create_all_tables()
 
     logger.info("Database initialized successfully")
 
 
-async def _run_schema_upgrades(conn) -> None:
-    """Apply lightweight additive schema upgrades for existing installations."""
-    dialect = conn.dialect.name
-    table_names = await conn.run_sync(lambda sync_conn: set(inspect(sync_conn).get_table_names()))
-    if "playlists" in table_names:
-        playlist_columns = await conn.run_sync(
-            lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("playlists")}
-        )
-        if "name_key" not in playlist_columns or "playlist_items" not in table_names:
-            logger.warning("Rebuilding playlist tables for the v2 playlist schema")
-            for table_name in (
-                "playlist_item_votes",
-                "playlist_votes",
-                "playlist_items",
-                "playlist_tracks",
-                "playlists",
-            ):
-                if table_name in table_names:
-                    await conn.execute(text(f"DROP TABLE {table_name}"))
+async def create_all_tables() -> None:
+    """Create all tables directly from model metadata.
 
-            from core.models import Playlist, PlaylistItem, PlaylistItemVote
+    Intended for tests and throwaway databases. Production schema is managed by
+    Alembic migrations (:func:`run_migrations`).
+    """
+    from core.models import Base
 
-            await conn.run_sync(Playlist.__table__.create)
-            await conn.run_sync(PlaylistItem.__table__.create)
-            await conn.run_sync(PlaylistItemVote.__table__.create)
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    columns = await conn.run_sync(
-        lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("fx_presets")}
-    )
 
-    statements: list[str] = []
-    if "preset_data" not in columns:
-        statements.append("ALTER TABLE fx_presets ADD COLUMN preset_data TEXT")
-    if "is_compatible" not in columns:
-        if dialect == "postgresql":
-            statements.append("ALTER TABLE fx_presets ADD COLUMN is_compatible BOOLEAN DEFAULT TRUE")
-        else:
-            statements.append("ALTER TABLE fx_presets ADD COLUMN is_compatible BOOLEAN DEFAULT 1")
+def _migrations_dir() -> Path:
+    """Resolve the Alembic ``migrations`` directory for source and frozen builds."""
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    else:
+        base = Path(__file__).resolve().parent.parent
+    return base / "migrations"
 
-    for statement in statements:
-        logger.info("Applying schema upgrade: {}", statement)
-        await conn.execute(text(statement))
 
-    # Check guild_settings table
-    guild_settings_columns = await conn.run_sync(
-        lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("guild_settings")}
-    )
-    if "panel_message_id" not in guild_settings_columns:
-        if dialect == "postgresql":
-            upgrade_stmt = "ALTER TABLE guild_settings ADD COLUMN panel_message_id BIGINT"
-        else:
-            upgrade_stmt = "ALTER TABLE guild_settings ADD COLUMN panel_message_id INTEGER"
-        logger.info("Applying schema upgrade: {}", upgrade_stmt)
-        await conn.execute(text(upgrade_stmt))
+def run_migrations(database_url: str) -> None:
+    """Apply Alembic migrations up to ``head``.
+
+    Runs synchronously (Alembic's env spins up its own event loop), so call this
+    from a sync context at startup before the bot event loop starts. Idempotent.
+
+    Args:
+        database_url: SQLAlchemy-compatible async database URL.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(_migrations_dir()))
+    cfg.set_main_option("sqlalchemy.url", database_url)
+    logger.info("Applying database migrations (alembic upgrade head)...")
+    command.upgrade(cfg, "head")
+    logger.info("Database migrations applied")
 
 
 async def close_db() -> None:

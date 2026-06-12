@@ -34,9 +34,9 @@ class LastFmSource(RecommendationSource):
 
         # Need an API key configured
         try:
-            from config import BotConfig
+            from config import get_config
 
-            config = BotConfig()
+            config = get_config()
             api_key = config.lastfm_api_key
         except Exception:
             api_key = ""
