@@ -39,6 +39,7 @@ class MusicPlayer:
         self._fallback_announced = False
         self._backend_switch_in_progress = False
         self._consecutive_failures = 0
+        self._skip_votes: set[int] = set()
         self._backend._volume = self.volume
         logger.info("MusicPlayer created for guild {} using {}", guild_id, self.backend_name)
 
@@ -106,6 +107,7 @@ class MusicPlayer:
                 return
 
             self.current = next_track
+            self._skip_votes.clear()
 
             if next_track.lazy_query:
                 from core.extractor import search_track
@@ -157,6 +159,11 @@ class MusicPlayer:
                 await self.play_next(error)
         except asyncio.CancelledError:
             pass
+
+    def add_skip_vote(self, user_id: int) -> int:
+        """Record a skip vote for the current track. Returns the current vote count."""
+        self._skip_votes.add(user_id)
+        return len(self._skip_votes)
 
     async def skip(self) -> Track | None:
         skipped = self.current

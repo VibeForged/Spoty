@@ -144,23 +144,71 @@ class Music(commands.Cog):
                 await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="skip", aliases=["s"], description="Skip the current track")
-    @is_dj()
     @cooldown(1, 2.0)
     async def skip(self, ctx: commands.Context) -> None:
-        """Skip the current track."""
+        """Skip the current track.
+
+        DJs/admins skip instantly. If the server configured a skip-vote threshold,
+        other members vote and the track is skipped once enough listeners agree.
+        """
+        from math import ceil
+
+        from core.permissions import Tier, check_tier, get_user_tier
+
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.is_playing:
             raise NothingPlayingError()
 
-        skipped = await player.skip()
-        title = skipped.short_title if skipped else "Unknown"
-        await ctx.send(
-            embed=discord.Embed(
-                title="Skipped",
-                description=f"Skipped **{title}**",
-                color=discord.Color.orange(),
+        settings = await self.bot.get_guild_settings(ctx.guild.id)
+        threshold = getattr(settings, "skip_vote_threshold", 0) if settings else 0
+
+        dj_role_id = settings.dj_role_id if settings else None
+        lone = getattr(settings, "lone_user_dj", True) if settings else True
+        tier = await get_user_tier(ctx, dj_role_id, lone)
+        privileged = check_tier(tier, Tier.DJ)
+
+        # Instant skip for DJs/admins, or when vote-skip is disabled.
+        if threshold <= 0 or privileged:
+            skipped = await player.skip()
+            title = skipped.short_title if skipped else "Unknown"
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Skipped",
+                    description=f"Skipped **{title}**",
+                    color=discord.Color.orange(),
+                )
             )
-        )
+            return
+
+        # Vote-skip path: the voter must be listening in the bot's channel.
+        vc = player.voice_client
+        author_voice = getattr(ctx.author, "voice", None)
+        if not vc or not author_voice or author_voice.channel != vc.channel:
+            await ctx.send("Join the voice channel to vote-skip.", ephemeral=True)
+            return
+
+        listeners = [m for m in vc.channel.members if not m.bot]
+        needed = max(1, ceil(len(listeners) * threshold / 100))
+        votes = player.add_skip_vote(ctx.author.id)
+
+        if votes >= needed:
+            skipped = await player.skip()
+            title = skipped.short_title if skipped else "Unknown"
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Vote Skip Passed",
+                    description=f"Skipped **{title}** ({votes}/{needed} votes)",
+                    color=discord.Color.orange(),
+                )
+            )
+        else:
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Vote to Skip",
+                    description=f"Skip vote registered: **{votes}/{needed}**",
+                    color=discord.Color.blue(),
+                )
+            )
 
     @commands.hybrid_command(name="stop", description="Stop playback and clear the queue")
     @is_dj()

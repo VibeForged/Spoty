@@ -40,6 +40,8 @@ class GuildSettings(Base):
     queue_locked: Mapped[bool] = mapped_column(Boolean, default=False)
     # Grant DJ tier to a user alone in the voice channel with the bot.
     lone_user_dj: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Percent of voice-channel listeners required to vote-skip (0 = DJ-only skip).
+    skip_vote_threshold: Mapped[int] = mapped_column(Integer, default=0)
     inactivity_timeout: Mapped[int] = mapped_column(Integer, default=300)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

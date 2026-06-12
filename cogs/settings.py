@@ -57,6 +57,12 @@ class Settings(commands.Cog):
             value=str(getattr(gs, "lone_user_dj", True)),
             inline=True,
         )
+        skip_pct = getattr(gs, "skip_vote_threshold", 0)
+        embed.add_field(
+            name="Vote-skip",
+            value=f"{skip_pct}%" if skip_pct > 0 else "Off (DJ-only)",
+            inline=True,
+        )
         embed.add_field(
             name="Inactivity Timeout",
             value=f"{gs.inactivity_timeout}s" if gs.inactivity_timeout > 0 else "24/7 Mode (Never)",
@@ -85,6 +91,29 @@ class Settings(commands.Cog):
         else:
             msg = "Lone-user DJ **disabled**. DJ permissions now require the DJ role or admin."
         await ctx.send(msg)
+
+    @settings.command(
+        name="skip_vote",
+        description="Set the % of listeners needed to vote-skip (0 = DJ-only)",
+    )
+    @app_commands.describe(percent="Percentage 0-100 (0 disables vote-skip; DJs always skip)")
+    @is_admin()
+    @cooldown(1, 5.0)
+    async def settings_skip_vote(self, ctx: commands.Context, percent: int) -> None:
+        """Configure the vote-skip threshold."""
+        from core.repositories import GuildSettingsRepo
+
+        if percent < 0 or percent > 100:
+            await ctx.send("Percentage must be between 0 and 100.", ephemeral=True)
+            return
+
+        await GuildSettingsRepo.update(ctx.guild.id, skip_vote_threshold=percent)
+        self.bot.invalidate_settings_cache(ctx.guild.id)
+
+        if percent == 0:
+            await ctx.send("Vote-skip **disabled**. Only DJs/admins can skip.")
+        else:
+            await ctx.send(f"Vote-skip set to **{percent}%** of listeners in the channel.")
 
     @settings.command(name="247", description="Toggle 24/7 mode (stay in voice channel forever)")
     @is_admin()
