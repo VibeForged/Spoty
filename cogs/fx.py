@@ -17,9 +17,13 @@ from core.filters import (
     parse_preset_input,
     summarize_preset_definition,
 )
+from core.validation import validate_name
 
 if TYPE_CHECKING:
     from bot import MusicBot
+
+# Cap on custom FX presets per guild (prevents unbounded DB growth / slow listings).
+MAX_CUSTOM_PRESETS = 50
 
 
 class FX(commands.Cog):
@@ -169,9 +173,23 @@ class FX(commands.Cog):
         """Create a custom FX preset from structured JSON or a legacy filter string."""
         from core.repositories import FXPresetRepo
 
+        try:
+            name = validate_name(name, max_length=50, label="Preset name")
+        except ValueError as exc:
+            await ctx.send(str(exc), ephemeral=True)
+            return
+
         existing = await FXPresetRepo.get_by_name(ctx.guild.id, name.lower())
         if existing:
             await ctx.send(f"A preset named `{name}` already exists.", ephemeral=True)
+            return
+
+        presets = await FXPresetRepo.list_for_guild(ctx.guild.id)
+        if len(presets) >= MAX_CUSTOM_PRESETS:
+            await ctx.send(
+                f"This server has reached the limit of {MAX_CUSTOM_PRESETS} custom presets.",
+                ephemeral=True,
+            )
             return
 
         try:

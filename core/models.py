@@ -38,6 +38,8 @@ class GuildSettings(Base):
     interactive_buttons: Mapped[bool] = mapped_column(Boolean, default=True)
     autoplay: Mapped[bool] = mapped_column(Boolean, default=False)
     queue_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Grant DJ tier to a user alone in the voice channel with the bot.
+    lone_user_dj: Mapped[bool] = mapped_column(Boolean, default=True)
     inactivity_timeout: Mapped[int] = mapped_column(Integer, default=300)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

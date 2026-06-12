@@ -23,6 +23,7 @@ class Tier(IntEnum):
 async def get_user_tier(
     ctx: Context,
     dj_role_id: int | None = None,
+    lone_user_dj: bool = True,
 ) -> Tier:
     """Determine a user's permission tier in the current guild.
 
@@ -30,12 +31,13 @@ async def get_user_tier(
     1. Bot owner -> OWNER (bypasses all)
     2. Guild admin (manage_guild) -> ADMIN
     3. Has DJ role -> DJ
-    4. Alone in VC with bot -> DJ (lone-user bypass)
+    4. Alone in VC with bot -> DJ (lone-user bypass, if enabled)
     5. Default -> EVERYONE
 
     Args:
         ctx: The command context.
         dj_role_id: The guild's configured DJ role ID (from guild_settings).
+        lone_user_dj: Whether the lone-user-in-VC bypass is enabled for the guild.
 
     Returns:
         The user's effective permission tier.
@@ -57,7 +59,7 @@ async def get_user_tier(
         return Tier.DJ
 
     # Lone-user bypass: if user is alone in VC with the bot, treat as DJ
-    if member.voice and member.voice.channel:
+    if lone_user_dj and member.voice and member.voice.channel:
         voice_channel = member.voice.channel
         non_bot_members = [m for m in voice_channel.members if not m.bot]
         if len(non_bot_members) == 1:

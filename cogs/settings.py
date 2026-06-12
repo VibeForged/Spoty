@@ -53,11 +53,38 @@ class Settings(commands.Cog):
         embed.add_field(name="Auto-DJ", value=str(gs.autoplay), inline=True)
         embed.add_field(name="Queue Locked", value=str(gs.queue_locked), inline=True)
         embed.add_field(
+            name="Lone-user DJ",
+            value=str(getattr(gs, "lone_user_dj", True)),
+            inline=True,
+        )
+        embed.add_field(
             name="Inactivity Timeout",
             value=f"{gs.inactivity_timeout}s" if gs.inactivity_timeout > 0 else "24/7 Mode (Never)",
             inline=True,
         )
         await ctx.send(embed=embed)
+
+    @settings.command(
+        name="lone_user_dj",
+        description="Toggle whether a user alone in the voice channel gets DJ permissions",
+    )
+    @is_admin()
+    @cooldown(1, 5.0)
+    async def settings_lone_user_dj(self, ctx: commands.Context) -> None:
+        """Toggle the lone-user-in-VC DJ bypass."""
+        from core.repositories import GuildSettingsRepo
+
+        gs = await self.bot.get_guild_settings(ctx.guild.id)
+        new_val = not getattr(gs, "lone_user_dj", True)
+
+        await GuildSettingsRepo.update(ctx.guild.id, lone_user_dj=new_val)
+        self.bot.invalidate_settings_cache(ctx.guild.id)
+
+        if new_val:
+            msg = "Lone-user DJ **enabled**. A user alone in the voice channel gets DJ permissions."
+        else:
+            msg = "Lone-user DJ **disabled**. DJ permissions now require the DJ role or admin."
+        await ctx.send(msg)
 
     @settings.command(name="247", description="Toggle 24/7 mode (stay in voice channel forever)")
     @is_admin()

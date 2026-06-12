@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -18,6 +19,17 @@ _thread_pool = ThreadPoolExecutor(max_workers=get_config().ytdlp_max_workers)
 
 # Cache extracted info for 10 minutes (600s), max 200 entries (~1MB)
 _extraction_cache: TTLCache[str, dict[str, Any]] = TTLCache(maxsize=200, ttl=600)
+
+# Only http(s) targets are allowed through to yt-dlp. Search terms like
+# "ytsearch:..." have no "scheme://" and are unaffected; this blocks file://,
+# data://, ftp://, etc. (SSRF / local-file reads).
+_URL_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.\-]*)://")
+
+
+def _has_disallowed_scheme(target: str) -> bool:
+    """Return True if target is a URL with a scheme other than http/https."""
+    match = _URL_SCHEME_RE.match(target.strip())
+    return match is not None and match.group(1).lower() not in ("http", "https")
 
 # yt-dlp options for audio extraction (no download)
 def _get_ydl_opts() -> dict[str, Any]:
@@ -78,6 +90,10 @@ async def extract_info(url: str, opts: dict[str, Any] | None = None) -> dict[str
     Returns:
         The extracted info dict, or None on failure.
     """
+    if _has_disallowed_scheme(url):
+        logger.warning("Refusing to extract non-http(s) URL: {}", url[:80])
+        return None
+
     # Check cache
     cache_key = url
     if cache_key in _extraction_cache:

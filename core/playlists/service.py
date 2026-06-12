@@ -28,6 +28,7 @@ from core.playlists.repository import (
     PlaylistVoteRepository,
 )
 from core.track import Track
+from core.validation import validate_name
 
 ALLOWED_SOURCES = {"youtube", "spotify", "soundcloud", "bandcamp", "direct", "unknown"}
 MAX_PLAYLIST_ITEMS = 500
@@ -72,11 +73,13 @@ class PlaylistService:
 
     @staticmethod
     def normalize_name(name: str) -> tuple[str, str]:
-        normalized = "_".join(name.strip().split())
+        try:
+            name = validate_name(name, max_length=100, label="Playlist name")
+        except ValueError as exc:
+            raise InvalidPlaylistNameError(str(exc)) from exc
+        normalized = "_".join(name.split())
         if not normalized:
             raise InvalidPlaylistNameError()
-        if len(normalized) > 100:
-            raise InvalidPlaylistNameError("Playlist name must be 100 characters or fewer.")
         return normalized, normalized.casefold()
 
     @staticmethod

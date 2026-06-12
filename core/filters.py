@@ -3,12 +3,54 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from typing import Any
 
 import wavelink
 
 PresetDefinition = dict[str, Any]
+
+# Audio filters a user may supply in a raw FFmpeg filter string. Anything else is
+# rejected so a custom preset can't crash/abuse FFmpeg or break out of the -af arg.
+_ALLOWED_FFMPEG_FILTERS = frozenset(
+    {
+        "aecho", "acrusher", "atempo", "asetrate", "aresample", "equalizer",
+        "stereotools", "tremolo", "vibrato", "apulsator", "lowpass", "highpass",
+        "bandpass", "bass", "treble", "volume", "pan", "chorus", "flanger",
+        "aphaser", "afade", "loudnorm", "dynaudnorm", "compand", "asoftclip",
+        "extrastereo", "crystalizer", "earwax", "silenceremove", "superequalizer",
+    }
+)
+_MAX_RAW_FILTER_LEN = 500
+# Characters that could break out of the quoted -af argument or chain extra graphs.
+_FORBIDDEN_FILTER_CHARS = frozenset("\"'`;$\\\n\r")
+_FILTER_NAME_RE = re.compile(r"^([a-z0-9_]+)")
+
+
+def validate_raw_ffmpeg_filters(raw: str) -> str:
+    """Validate a user-supplied raw FFmpeg filter chain; return it cleaned.
+
+    Each comma-separated segment must start with an allowlisted filter name and
+    the whole string must be free of shell/quoting metacharacters. Raises
+    ``ValueError`` (surfaced to the user) on anything suspicious.
+    """
+    cleaned = raw.strip()
+    if not cleaned:
+        raise ValueError("Filter string is empty.")
+    if len(cleaned) > _MAX_RAW_FILTER_LEN:
+        raise ValueError(f"Filter string must be {_MAX_RAW_FILTER_LEN} characters or fewer.")
+    if any(ch in _FORBIDDEN_FILTER_CHARS for ch in cleaned):
+        raise ValueError("Filter string contains forbidden characters.")
+    for segment in cleaned.split(","):
+        seg = segment.strip()
+        if not seg:
+            raise ValueError("Filter string has an empty segment.")
+        match = _FILTER_NAME_RE.match(seg)
+        if match is None or match.group(1) not in _ALLOWED_FFMPEG_FILTERS:
+            name = match.group(1) if match else seg
+            raise ValueError(f"Disallowed FFmpeg filter: '{name}'")
+    return cleaned
 
 
 def normalize_preset_definition(definition: PresetDefinition | None) -> PresetDefinition:
@@ -131,9 +173,10 @@ def parse_preset_input(raw: str) -> PresetDefinition:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        # Legacy support: allow raw FFmpeg filters and store them in the compatibility layer.
+        # Legacy support: allow a raw FFmpeg filter string, but validate it against
+        # an allowlist so it can't crash/abuse FFmpeg or escape the -af argument.
         if raw.strip():
-            return _preset(ffmpeg_only_filters=[raw.strip()])
+            return _preset(ffmpeg_only_filters=[validate_raw_ffmpeg_filters(raw)])
         raise ValueError("Preset data must be valid JSON.") from exc
 
     if not isinstance(parsed, dict):

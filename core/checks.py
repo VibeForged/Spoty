@@ -85,14 +85,16 @@ def is_dj() -> Callable:
         if override is False:
             raise DJRequiredError()
 
-        # Get DJ role from guild settings
+        # Get DJ role + lone-user-bypass setting from guild settings
         dj_role_id = None
+        lone_user_dj = True
         if hasattr(ctx.bot, "get_guild_settings"):
             settings = await ctx.bot.get_guild_settings(ctx.guild.id)
             if settings:
                 dj_role_id = settings.dj_role_id
+                lone_user_dj = getattr(settings, "lone_user_dj", True)
 
-        tier = await get_user_tier(ctx, dj_role_id)
+        tier = await get_user_tier(ctx, dj_role_id, lone_user_dj)
         if not check_tier(tier, Tier.DJ):
             raise DJRequiredError()
         return True
