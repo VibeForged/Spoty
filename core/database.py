@@ -96,6 +96,15 @@ def run_migrations(database_url: str) -> None:
     from alembic import command
     from alembic.config import Config
 
+    if database_url.startswith("sqlite"):
+        from pathlib import Path
+
+        # Extract path from URL like sqlite+aiosqlite:///data/bot.db
+        path_str = database_url.split("///")[-1]
+        db_path = Path(path_str)
+        if db_path.parent and str(db_path.parent) != ".":
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+
     cfg = Config()
     cfg.set_main_option("script_location", str(_migrations_dir()))
     cfg.set_main_option("sqlalchemy.url", database_url)
