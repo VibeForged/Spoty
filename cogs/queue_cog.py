@@ -116,6 +116,44 @@ class QueueCog(commands.Cog, name="Queue"):
         count = player.queue.clear()
         await ctx.send(f"Cleared **{count}** tracks from the queue")
 
+    @commands.hybrid_command(
+        name="queuesearch", aliases=["qsearch"], description="Search the current queue by title"
+    )
+    @app_commands.describe(query="Text to find in queued track titles")
+    @cooldown(1, 3.0)
+    async def queuesearch(self, ctx: commands.Context, *, query: str) -> None:
+        """Find queued tracks whose title contains the query (case-insensitive)."""
+        player = self.bot.get_player(ctx.guild.id)
+        if not player:
+            raise BotNotConnectedError()
+
+        needle = query.strip().casefold()
+        if not needle:
+            await ctx.send("Provide a search term.", ephemeral=True)
+            return
+
+        matches = [
+            (pos, track)
+            for pos, track in enumerate(player.queue.tracks, start=1)
+            if needle in track.title.casefold()
+        ]
+        if not matches:
+            await ctx.send(f"No queued tracks match `{query}`.", ephemeral=True)
+            return
+
+        lines = [
+            f"`{pos}.` [{track.short_title}]({track.url}) `{track.duration_str}`"
+            for pos, track in matches[:25]
+        ]
+        embed = discord.Embed(
+            title=f"Queue matches for '{query[:80]}'",
+            description="\n".join(lines),
+            color=discord.Color.blue(),
+        )
+        if len(matches) > 25:
+            embed.set_footer(text=f"Showing 25 of {len(matches)} matches")
+        await ctx.send(embed=embed)
+
     @commands.hybrid_command(name="grab", description="DM yourself the current track info")
     @cooldown(1, 5.0)
     async def grab(self, ctx: commands.Context) -> None:
