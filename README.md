@@ -1,3 +1,12 @@
+---
+title: SpotyTheBot
+emoji: 🎵
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # Spoty Discord Bot
 
 A feature-rich Discord music bot with dual audio backend support, playlists, FX presets, and more.
