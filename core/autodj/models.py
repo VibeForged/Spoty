@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from core.track import Track
 
@@ -47,8 +47,12 @@ class SessionContext:
     recent_urls: set[str] = field(default_factory=set)
     skip_signals: dict[str, int] = field(default_factory=dict)  # url -> skip_count
     completion_signals: dict[str, int] = field(default_factory=dict)  # url -> complete_count
+    skip_artists: dict[str, int] = field(default_factory=dict)  # artist_lower -> skip_count
+    completion_artists: dict[str, int] = field(
+        default_factory=dict
+    )  # artist_lower -> complete_count
     tracks_served: int = 0
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     genre_affinity: dict[str, float] = field(default_factory=dict)  # genre -> weight
     _max_recent_urls: int = field(default=200, repr=False)
 
@@ -63,13 +67,19 @@ class SessionContext:
         """Track a recently played artist for diversity scoring."""
         self.recent_artists.append(artist.lower().strip())
 
-    def record_skip(self, url: str) -> None:
+    def record_skip(self, url: str, artist: str | None = None) -> None:
         """Record that a track was skipped by the user."""
         self.skip_signals[url] = self.skip_signals.get(url, 0) + 1
+        if artist:
+            artist_lower = artist.lower().strip()
+            self.skip_artists[artist_lower] = self.skip_artists.get(artist_lower, 0) + 1
 
-    def record_completion(self, url: str) -> None:
+    def record_completion(self, url: str, artist: str | None = None) -> None:
         """Record that a track was played to completion."""
         self.completion_signals[url] = self.completion_signals.get(url, 0) + 1
+        if artist:
+            artist_lower = artist.lower().strip()
+            self.completion_artists[artist_lower] = self.completion_artists.get(artist_lower, 0) + 1
 
     def should_reset(self) -> bool:
         """Check if the session has gone stale and should re-seed."""

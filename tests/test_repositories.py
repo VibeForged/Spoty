@@ -95,9 +95,7 @@ class TestPlaylistService:
             1,
             100,
             "Positions",
-            PlaylistService.item_from_mapping(
-                {"title": "D", "url": "http://d", "duration": 100}
-            ),
+            PlaylistService.item_from_mapping({"title": "D", "url": "http://d", "duration": 100}),
         )
         detail = await PlaylistService.get_playlist_detail(1, 100, "Positions")
 
@@ -309,3 +307,33 @@ class TestQueueStateRepo:
 
         await QueueStateRepo.delete(7)
         assert await QueueStateRepo.get_all() == []
+
+
+@pytest.mark.asyncio
+class TestSoundboardRepo:
+    async def test_add_get_delete(self, db):
+        from core.repositories import SoundboardRepo
+
+        # Add sound
+        sound = await SoundboardRepo.add(
+            guild_id=1, name="test_sound", url="http://test.url/sound.mp3", created_by=100
+        )
+        assert sound is not None
+        assert sound.name == "test_sound"
+        assert sound.url == "http://test.url/sound.mp3"
+
+        # Get sound
+        res = await SoundboardRepo.get(guild_id=1, name="test_sound")
+        assert res is not None
+        assert res.url == "http://test.url/sound.mp3"
+
+        # List sounds
+        all_sounds = await SoundboardRepo.get_all(guild_id=1)
+        assert len(all_sounds) == 1
+
+        # Delete sound
+        deleted = await SoundboardRepo.delete(guild_id=1, name="test_sound")
+        assert deleted is True
+
+        res = await SoundboardRepo.get(guild_id=1, name="test_sound")
+        assert res is None

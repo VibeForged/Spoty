@@ -57,7 +57,9 @@ def build_panel_embed(player: MusicPlayer | None) -> discord.Embed:
         if fx:
             status.append(f"FX: {', '.join(fx)}")
 
-        embed.add_field(name="Status", value=" | ".join(status) if status else "Playing", inline=False)
+        embed.add_field(
+            name="Status", value=" | ".join(status) if status else "Playing", inline=False
+        )
 
         if track.thumbnail:
             embed.set_thumbnail(url=track.thumbnail)
@@ -76,12 +78,21 @@ class FXSelect(discord.ui.Select):
             if p in BUILTIN_PRESETS:
                 options.append(discord.SelectOption(label=p.title(), value=p))
 
-        super().__init__(placeholder="Select Audio Effect...", min_values=1, max_values=1, options=options, row=1, custom_id="panel_fx_select")
+        super().__init__(
+            placeholder="Select Audio Effect...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=1,
+            custom_id="panel_fx_select",
+        )
 
     async def callback(self, interaction: discord.Interaction):
         view: PlayerControlPanel = self.view
         if not await _check_dj_interaction(interaction, view.bot):
-            return await interaction.response.send_message("You need the DJ role to use this.", ephemeral=True)
+            return await interaction.response.send_message(
+                "You need the DJ role to use this.", ephemeral=True
+            )
 
         player = view.player
         if not player or player._destroyed:
@@ -94,7 +105,9 @@ class FXSelect(discord.ui.Select):
             await interaction.response.send_message("Cleared all audio effects.", ephemeral=True)
         else:
             await player.apply_filters([val])
-            await interaction.response.send_message(f"Applied {val.title()} effect.", ephemeral=True)
+            await interaction.response.send_message(
+                f"Applied {val.title()} effect.", ephemeral=True
+            )
 
         await view.update_panel(interaction)
 
@@ -108,12 +121,21 @@ class VolumeSelect(discord.ui.Select):
             discord.SelectOption(label="Volume: 100%", value="100"),
             discord.SelectOption(label="Volume: 150%", value="150"),
         ]
-        super().__init__(placeholder="Adjust Volume...", min_values=1, max_values=1, options=options, row=2, custom_id="panel_vol_select")
+        super().__init__(
+            placeholder="Adjust Volume...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=2,
+            custom_id="panel_vol_select",
+        )
 
     async def callback(self, interaction: discord.Interaction):
         view: PlayerControlPanel = self.view
         if not await _check_dj_interaction(interaction, view.bot):
-            return await interaction.response.send_message("You need the DJ role to use this.", ephemeral=True)
+            return await interaction.response.send_message(
+                "You need the DJ role to use this.", ephemeral=True
+            )
 
         player = view.player
         if not player or player._destroyed:
@@ -185,10 +207,20 @@ class PlayerControlPanel(discord.ui.View):
             # This is handled by core/player.py passing the message to edit.
             pass
 
-    @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, emoji="\u23f8", custom_id="panel_pause", row=0)
-    async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    @discord.ui.button(
+        label="Pause",
+        style=discord.ButtonStyle.primary,
+        emoji="\u23f8",
+        custom_id="panel_pause",
+        row=0,
+    )
+    async def pause_resume(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         if not await _check_dj_interaction(interaction, self.bot):
-            return await interaction.response.send_message("You need the DJ role to use this.", ephemeral=True)
+            return await interaction.response.send_message(
+                "You need the DJ role to use this.", ephemeral=True
+            )
 
         if not self.player or self.player._destroyed:
             await interaction.response.send_message("Player is not active.", ephemeral=True)
@@ -200,10 +232,18 @@ class PlayerControlPanel(discord.ui.View):
 
         await self.update_panel(interaction)
 
-    @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, emoji="\u23ed", custom_id="panel_skip", row=0)
+    @discord.ui.button(
+        label="Skip",
+        style=discord.ButtonStyle.secondary,
+        emoji="\u23ed",
+        custom_id="panel_skip",
+        row=0,
+    )
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await _check_dj_interaction(interaction, self.bot):
-            return await interaction.response.send_message("You need the DJ role to use this.", ephemeral=True)
+            return await interaction.response.send_message(
+                "You need the DJ role to use this.", ephemeral=True
+            )
 
         if not self.player or self.player._destroyed:
             await interaction.response.send_message("Player is not active.", ephemeral=True)
@@ -212,10 +252,20 @@ class PlayerControlPanel(discord.ui.View):
         await interaction.response.send_message("Skipped!", ephemeral=True)
         # update_panel will be called by player.py when track actually changes
 
-    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="\u23f9", custom_id="panel_stop", row=0)
-    async def stop_player(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    @discord.ui.button(
+        label="Stop",
+        style=discord.ButtonStyle.danger,
+        emoji="\u23f9",
+        custom_id="panel_stop",
+        row=0,
+    )
+    async def stop_player(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         if not await _check_dj_interaction(interaction, self.bot):
-            return await interaction.response.send_message("You need the DJ role to use this.", ephemeral=True)
+            return await interaction.response.send_message(
+                "You need the DJ role to use this.", ephemeral=True
+            )
 
         if not self.player or self.player._destroyed:
             await interaction.response.send_message("Player is not active.", ephemeral=True)
@@ -224,10 +274,18 @@ class PlayerControlPanel(discord.ui.View):
         await interaction.response.send_message("Stopped playback.", ephemeral=True)
         # update_panel will be called by player.py
 
-    @discord.ui.button(label="Loop: Off", style=discord.ButtonStyle.secondary, emoji="\U0001f501", custom_id="panel_loop", row=0)
+    @discord.ui.button(
+        label="Loop: Off",
+        style=discord.ButtonStyle.secondary,
+        emoji="\U0001f501",
+        custom_id="panel_loop",
+        row=0,
+    )
     async def loop(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await _check_dj_interaction(interaction, self.bot):
-            return await interaction.response.send_message("You need the DJ role to use this.", ephemeral=True)
+            return await interaction.response.send_message(
+                "You need the DJ role to use this.", ephemeral=True
+            )
 
         if not self.player or self.player._destroyed:
             await interaction.response.send_message("Player is not active.", ephemeral=True)
@@ -242,10 +300,18 @@ class PlayerControlPanel(discord.ui.View):
 
         await self.update_panel(interaction)
 
-    @discord.ui.button(label="Shuffle", style=discord.ButtonStyle.secondary, emoji="\U0001f500", custom_id="panel_shuffle", row=0)
+    @discord.ui.button(
+        label="Shuffle",
+        style=discord.ButtonStyle.secondary,
+        emoji="\U0001f500",
+        custom_id="panel_shuffle",
+        row=0,
+    )
     async def shuffle(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await _check_dj_interaction(interaction, self.bot):
-            return await interaction.response.send_message("You need the DJ role to use this.", ephemeral=True)
+            return await interaction.response.send_message(
+                "You need the DJ role to use this.", ephemeral=True
+            )
 
         if not self.player or self.player._destroyed:
             await interaction.response.send_message("Player is not active.", ephemeral=True)

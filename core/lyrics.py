@@ -163,11 +163,7 @@ class LRCLibProvider(LyricsProvider):
 
     @staticmethod
     def _extract_lyrics(record: dict[str, object]) -> str | None:
-        return (
-            record.get("syncedLyrics")
-            or record.get("plainLyrics")
-            or None
-        )
+        return record.get("syncedLyrics") or record.get("plainLyrics") or None
 
 
 class SyncedLyricsProvider(LyricsProvider):
@@ -193,7 +189,8 @@ class SyncedLyricsProvider(LyricsProvider):
             # Run syncedlyrics in executor to avoid blocking
             lrc = await loop.run_in_executor(
                 None,
-                lambda: asyncio.run(self._syncedlyrics_search(query)),
+                self._syncedlyrics_search,
+                query,
             )
             if lrc:
                 logger.info("Found lyrics via syncedlyrics fallback")
@@ -205,7 +202,7 @@ class SyncedLyricsProvider(LyricsProvider):
         return None
 
     @staticmethod
-    async def _syncedlyrics_search(query: str) -> str | None:
+    def _syncedlyrics_search(query: str) -> str | None:
         """Wrapper for syncedlyrics.search with error handling."""
         try:
             import syncedlyrics

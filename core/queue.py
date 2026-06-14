@@ -31,6 +31,7 @@ class MusicQueue:
         self._history: deque[Track] = deque(maxlen=100)
         self._loop_mode: LoopMode = LoopMode.OFF
         self._max_size: int = max_size
+        self.on_add = None
 
     @property
     def loop_mode(self) -> LoopMode:
@@ -79,24 +80,33 @@ class MusicQueue:
         """Add a track to the end of the queue. Returns the position."""
         if self.is_full:
             from core.errors import QueueFullError
+
             raise QueueFullError(self._max_size)
         self._tracks.append(track)
+        if self.on_add:
+            self.on_add()
         return len(self._tracks)
 
     def add_top(self, track: Track) -> None:
         """Insert a track at the front of the queue (position 1)."""
         if self.is_full:
             from core.errors import QueueFullError
+
             raise QueueFullError(self._max_size)
         self._tracks.appendleft(track)
+        if self.on_add:
+            self.on_add()
 
     def add_at(self, position: int, track: Track) -> None:
         """Insert a track at a specific position (0-indexed)."""
         if self.is_full:
             from core.errors import QueueFullError
+
             raise QueueFullError(self._max_size)
         position = max(0, min(position, len(self._tracks)))
         self._tracks.insert(position, track)
+        if self.on_add:
+            self.on_add()
 
     def next(self, current: Track | None = None) -> Track | None:
         """Get the next track based on the current loop mode.
@@ -162,6 +172,67 @@ class MusicQueue:
         tracks = list(self._tracks)
         random.shuffle(tracks)
         self._tracks = deque(tracks)
+
+    def smart_shuffle(self) -> None:
+        """Shuffle the queue using an artist-dispersion algorithm.
+
+        Ensures that consecutive tracks are from different artists as much as possible.
+        """
+        from core.autodj.utils import parse_artist_title
+
+        if len(self._tracks) <= 2:
+            self.shuffle()
+            return
+
+        # Group tracks by artist
+        groups: dict[str, list[Track]] = {}
+        unique_counter = 0
+
+        # Pre-shuffle to ensure randomness among tracks of the same artist
+        tracks_list = list(self._tracks)
+        random.shuffle(tracks_list)
+
+        for track in tracks_list:
+            artist, _ = parse_artist_title(track.title)
+            if artist:
+                artist_key = artist.lower().strip()
+            else:
+                artist_key = f"__unknown_{unique_counter}__"
+                unique_counter += 1
+
+            if artist_key not in groups:
+                groups[artist_key] = []
+            groups[artist_key].append(track)
+
+        # Re-assemble using a greedy dispersion approach
+        shuffled: list[Track] = []
+        last_artist: str | None = None
+
+        while groups:
+            # Sort artists by count descending
+            sorted_artists = sorted(groups.keys(), key=lambda k: len(groups[k]), reverse=True)
+
+            # Pick the artist with the most tracks that is NOT the last artist
+            chosen_artist = None
+            for artist in sorted_artists:
+                if artist != last_artist:
+                    chosen_artist = artist
+                    break
+
+            # If we couldn't find a different artist, we have to pick the same one
+            if chosen_artist is None:
+                chosen_artist = sorted_artists[0]
+
+            # Pop a track and append
+            track = groups[chosen_artist].pop()
+            shuffled.append(track)
+            last_artist = chosen_artist
+
+            # Clean up empty groups
+            if not groups[chosen_artist]:
+                del groups[chosen_artist]
+
+        self._tracks = deque(shuffled)
 
     def clear(self) -> int:
         """Clear all tracks from the queue. Returns the number of tracks cleared."""

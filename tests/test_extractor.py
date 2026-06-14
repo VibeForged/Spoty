@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from core.track import Track
 
 
@@ -31,3 +33,27 @@ class TestTrack:
     def test_str_representation(self):
         t = Track(title="Test Song", url="https://example.com", duration=120)
         assert str(t) == "Test Song [2:00]"
+
+
+@pytest.mark.asyncio
+class TestExtractorSecurity:
+    async def test_ssrf_risk_detection(self):
+        from core.extractor import _is_ssrf_risk
+
+        assert _is_ssrf_risk("http://127.0.0.1/abc") is True
+        assert _is_ssrf_risk("http://localhost/abc") is True
+        assert _is_ssrf_risk("https://169.254.169.254/latest/meta-data") is True
+        assert _is_ssrf_risk("https://www.google.com") is False
+
+    async def test_disallowed_schemes(self):
+        from core.extractor import _has_disallowed_scheme
+
+        assert _has_disallowed_scheme("file:///etc/passwd") is True
+        assert _has_disallowed_scheme("ftp://example.com") is True
+        assert _has_disallowed_scheme("https://example.com") is False
+
+    async def test_extract_info_blocks_ssrf(self):
+        from core.extractor import extract_info
+
+        res = await extract_info("http://127.0.0.1/test")
+        assert res is None

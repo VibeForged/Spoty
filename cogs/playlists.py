@@ -164,7 +164,7 @@ class Playlists(commands.Cog):
 
         embed = discord.Embed(title="Your Playlists", color=discord.Color.blue())
         embed.description = "\n".join(
-            f"**{i+1}. {playlist.name}** - {playlist.track_count} tracks"
+            f"**{i + 1}. {playlist.name}** - {playlist.track_count} tracks"
             for i, playlist in enumerate(playlists)
         )
         await ctx.send(embed=embed)
@@ -173,9 +173,7 @@ class Playlists(commands.Cog):
     @app_commands.describe(name="Playlist name")
     @app_commands.autocomplete(name=playlist_autocomplete)
     @cooldown(1, 3.0)
-    async def playlist_view(
-        self, ctx: commands.Context, name: str, page: int = 1
-    ) -> None:
+    async def playlist_view(self, ctx: commands.Context, name: str, page: int = 1) -> None:
         """View tracks in a playlist."""
         view = PlaylistPaginator(ctx.guild.id, ctx.author.id, name, page=page)
         detail = await PlaylistService.get_playlist_detail(
@@ -321,8 +319,7 @@ class Playlists(commands.Cog):
                     embed=discord.Embed(
                         title="Playlist Imported",
                         description=(
-                            f"Imported **{playlist.track_count}** tracks as "
-                            f"**{playlist.name}**"
+                            f"Imported **{playlist.track_count}** tracks as **{playlist.name}**"
                         ),
                         color=discord.Color.green(),
                     )
@@ -331,6 +328,7 @@ class Playlists(commands.Cog):
 
         if "spotify.com" in source:
             from core.spotify import SpotifyScraper
+
             playlist_name, queries = await SpotifyScraper.extract_queries(source)
             if not queries:
                 await ctx.send("Failed to search Spotify or no tracks found.", ephemeral=True)
@@ -339,13 +337,15 @@ class Playlists(commands.Cog):
             name = playlist_name or "Imported Spotify Playlist"
             track_dicts = []
             for q in queries[:MAX_IMPORT_ITEMS]:
-                track_dicts.append({
-                    "title": q,
-                    "url": source,
-                    "duration": None,
-                    "source": "spotify",
-                    "external_id": q
-                })
+                track_dicts.append(
+                    {
+                        "title": q,
+                        "url": source,
+                        "duration": None,
+                        "source": "spotify",
+                        "external_id": q,
+                    }
+                )
 
             playlist = await PlaylistService.import_items(
                 ctx.guild.id, ctx.author.id, name, track_dicts
@@ -399,9 +399,7 @@ class Playlists(commands.Cog):
         """Downvote a track in a playlist."""
         await self._vote(ctx, name, position, -1)
 
-    async def _vote(
-        self, ctx: commands.Context, name: str, position: int, vote: int
-    ) -> None:
+    async def _vote(self, ctx: commands.Context, name: str, position: int, vote: int) -> None:
         try:
             item, (likes, dislikes) = await PlaylistService.vote_item(
                 ctx.guild.id,
@@ -424,7 +422,9 @@ class Playlists(commands.Cog):
         )
 
     @playlist.command(name="copy", description="Copy a shared playlist")
-    @app_commands.describe(source="Share code, URL, or your playlist name", new_name="New playlist name")
+    @app_commands.describe(
+        source="Share code, URL, or your playlist name", new_name="New playlist name"
+    )
     @app_commands.autocomplete(source=playlist_autocomplete)
     @cooldown(1, 5.0)
     async def playlist_copy(self, ctx: commands.Context, source: str, new_name: str) -> None:

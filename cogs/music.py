@@ -70,6 +70,31 @@ async def _play_history_autocomplete(
     return choices
 
 
+async def _queue_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    """Suggest songs from the current queue."""
+    if not interaction.guild_id:
+        return []
+
+    player = interaction.client.get_player(interaction.guild_id)
+    if not player or player.queue.is_empty:
+        return []
+
+    cur = current.lower()
+    choices: list[app_commands.Choice[str]] = []
+
+    for i, track in enumerate(player.queue.tracks):
+        label = f"{i + 1}. {track.title}"
+        if cur in label.lower():
+            # Use string representation of index as value
+            choices.append(app_commands.Choice(name=label[:100], value=str(i)))
+        if len(choices) >= 25:
+            break
+
+    return choices
+
+
 class Music(commands.Cog):
     """Core music playback commands."""
 
@@ -84,9 +109,7 @@ class Music(commands.Cog):
             raise WrongChannelError(settings.music_channel_id)
         return True
 
-    async def _get_or_create_player(
-        self, ctx: commands.Context
-    ) -> MusicPlayer:
+    async def _get_or_create_player(self, ctx: commands.Context) -> MusicPlayer:
         """Get existing player or create a new one by joining the user's VC."""
         guild_id = ctx.guild.id
         player = self.bot.get_player(guild_id)
@@ -101,6 +124,7 @@ class Music(commands.Cog):
         # User must be in a voice channel
         if not isinstance(ctx.author, discord.Member) or not ctx.author.voice:
             from core.errors import NotInVoiceChannelError
+
             raise NotInVoiceChannelError()
 
         channel = ctx.author.voice.channel
@@ -134,7 +158,9 @@ class Music(commands.Cog):
 
         return player.queue.count_for_requester(ctx.author.id) < cap
 
-    @commands.hybrid_command(name="play", aliases=["p"], description="Play a song from YouTube or other sources")
+    @commands.hybrid_command(
+        name="play", aliases=["p"], description="Play a song from YouTube or other sources"
+    )
     @app_commands.describe(query="Song name or URL to play")
     @app_commands.autocomplete(query=_play_history_autocomplete)
     @cooldown(1, 3.0)
@@ -158,12 +184,7 @@ class Music(commands.Cog):
             if not queries:
                 raise TrackNotFoundError(query)
             for q in queries:
-                track = Track(
-                    title=q,
-                    url=query,
-                    source="spotify",
-                    lazy_query=q
-                )
+                track = Track(title=q, url=query, source="spotify", lazy_query=q)
                 track.requester_id = ctx.author.id
                 track.requester_name = ctx.author.display_name
                 tracks.append(track)
@@ -201,7 +222,8 @@ class Music(commands.Cog):
                 # Add to queue notification for the first track or single track
                 embed = discord.Embed(
                     title="Added to Queue",
-                    description=f"**[{track.title}]({track.url})**" + (f" and {len(tracks)-1} more tracks" if len(tracks) > 1 else ""),
+                    description=f"**[{track.title}]({track.url})**"
+                    + (f" and {len(tracks) - 1} more tracks" if len(tracks) > 1 else ""),
                     color=discord.Color.blue(),
                 )
                 embed.add_field(name="Position", value=str(position), inline=True)
@@ -433,7 +455,9 @@ class Music(commands.Cog):
         embed = paginator.build_embed()
         await ctx.send(embed=embed, view=paginator)
 
-    @commands.hybrid_command(name="nowplaying", aliases=["np"], description="Show the currently playing track")
+    @commands.hybrid_command(
+        name="nowplaying", aliases=["np"], description="Show the currently playing track"
+    )
     @cooldown(1, 3.0)
     async def nowplaying(self, ctx: commands.Context) -> None:
         """Show the currently playing track with interactive buttons."""
@@ -474,7 +498,9 @@ class Music(commands.Cog):
         view = NowPlayingView(player) if settings and settings.interactive_buttons else None
         await ctx.send(embed=embed, view=view)
 
-    @commands.hybrid_command(name="panel", description="Re-summon the persistent player control panel")
+    @commands.hybrid_command(
+        name="panel", description="Re-summon the persistent player control panel"
+    )
     @is_dj()
     @cooldown(1, 10.0)
     async def panel(self, ctx: commands.Context) -> None:
@@ -504,16 +530,15 @@ class Music(commands.Cog):
         msg = await ctx.send(embed=embed, view=view)
 
         # Track this new panel message in the settings
-        await GuildSettingsRepo.update(
-            ctx.guild.id,
-            panel_message_id=msg.id
-        )
+        await GuildSettingsRepo.update(ctx.guild.id, panel_message_id=msg.id)
         self.bot.invalidate_settings_cache(ctx.guild.id)
 
     @commands.hybrid_command(name="join", description="Join a voice channel")
     @in_voice()
     @cooldown(1, 3.0)
-    async def join(self, ctx: commands.Context, *, channel: discord.VoiceChannel | None = None) -> None:
+    async def join(
+        self, ctx: commands.Context, *, channel: discord.VoiceChannel | None = None
+    ) -> None:
         """Join a voice channel."""
         target = channel or ctx.author.voice.channel
 
@@ -532,7 +557,9 @@ class Music(commands.Cog):
         except Exception as e:
             raise VoiceConnectionFailedError(str(e)) from e
 
-    @commands.hybrid_command(name="leave", aliases=["dc", "disconnect"], description="Leave the voice channel")
+    @commands.hybrid_command(
+        name="leave", aliases=["dc", "disconnect"], description="Leave the voice channel"
+    )
     @is_dj()
     @cooldown(1, 3.0)
     async def leave(self, ctx: commands.Context) -> None:
@@ -574,25 +601,39 @@ class Music(commands.Cog):
         await player.seek(seconds * 1000)
         await ctx.send(f"Seeked to `{_format_time(seconds)}`")
 
-    @commands.hybrid_command(name="forward", aliases=["fwd"], description="Jump forward in the track")
-    @app_commands.describe(seconds="Seconds to jump forward (default 15)")
+    @commands.hybrid_command(
+        name="forward", aliases=["fwd"], description="Play a specific song from the queue"
+    )
+    @app_commands.describe(song="The song to play from the queue")
+    @app_commands.autocomplete(song=_queue_autocomplete)
     @is_dj()
     @cooldown(1, 2.0)
-    async def forward(self, ctx: commands.Context, seconds: int = 15) -> None:
-        """Seek forward by a number of seconds."""
+    async def forward(self, ctx: commands.Context, song: str) -> None:
+        """Play a specific song from the queue and remove it."""
         player = self.bot.get_player(ctx.guild.id)
         if not player or not player.current:
             raise NothingPlayingError()
-        if seconds <= 0:
-            await ctx.send("Seconds must be positive.", ephemeral=True)
+
+        if not song.isdigit():
+            await ctx.send("Invalid song selection.", ephemeral=True)
             return
 
-        target = player.position_ms // 1000 + seconds
-        duration = player.current.duration
-        if duration is not None and target > duration:
-            target = duration
-        await player.seek(target * 1000)
-        await ctx.send(f"Skipped forward to `{_format_time(target)}`")
+        index = int(song)
+        track = player.queue.remove(index)
+        if not track:
+            await ctx.send("Song not found in the queue.", ephemeral=True)
+            return
+
+        player.queue.add_top(track)
+        await player.skip()
+
+        await ctx.send(
+            embed=discord.Embed(
+                title="Forwarded to Song",
+                description=f"Skipped to and playing **[{track.title}]({track.url})** from the queue.",
+                color=discord.Color.green(),
+            )
+        )
 
     @commands.hybrid_command(name="rewind", aliases=["rwd"], description="Rewind the track")
     @app_commands.describe(seconds="Seconds to rewind (default 15)")
@@ -672,7 +713,9 @@ class Music(commands.Cog):
             raise BotNotConnectedError()
 
         if position < 1 or position > player.queue.size:
-            await ctx.send(f"Invalid position. Queue has {player.queue.size} tracks.", ephemeral=True)
+            await ctx.send(
+                f"Invalid position. Queue has {player.queue.size} tracks.", ephemeral=True
+            )
             return
 
         # Remove tracks before the target position

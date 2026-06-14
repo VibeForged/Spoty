@@ -69,13 +69,17 @@ class PlaylistPaginator(discord.ui.View):
         return build_playlist_embed(detail)
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, emoji="\u25c0", row=0)
-    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def prev_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         self.page = max(1, self.page - 1)
         embed = await self.build_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, emoji="\u25b6", row=0)
-    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def next_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         self.page = min(self.total_pages, self.page + 1)
         embed = await self.build_embed()
         await interaction.response.edit_message(embed=embed, view=self)

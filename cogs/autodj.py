@@ -29,7 +29,9 @@ class AutoDJ(commands.Cog):
             await self.autodj_start(ctx)
 
     @autodj.command(name="start", description="Start Auto-DJ with optional genre/artist seed")
-    @app_commands.describe(query="Optional genre, artist, or song to seed Auto-DJ (e.g. 'rock', 'Eminem')")
+    @app_commands.describe(
+        query="Optional genre, artist, or song to seed Auto-DJ (e.g. 'rock', 'Eminem')"
+    )
     @in_voice()
     @cooldown(1, 5.0)
     async def autodj_start(self, ctx: commands.Context, *, query: str | None = None) -> None:
@@ -133,7 +135,9 @@ class AutoDJ(commands.Cog):
             "Use `!autodj stop` to turn it off.",
             color=discord.Color.purple(),
         )
-        embed.add_field(name="Sources", value="YouTube Mix • Last.fm • History • Search", inline=False)
+        embed.add_field(
+            name="Sources", value="YouTube Mix • Last.fm • History • Search", inline=False
+        )
         if seed_track.thumbnail:
             embed.set_thumbnail(url=seed_track.thumbnail)
 
@@ -220,7 +224,9 @@ class AutoDJ(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @autodj.command(name="skip", description="Skip current Auto-DJ track and get a fresh recommendation")
+    @autodj.command(
+        name="skip", description="Skip current Auto-DJ track and get a fresh recommendation"
+    )
     @cooldown(1, 3.0)
     async def autodj_skip(self, ctx: commands.Context) -> None:
         """Skip the current track and tell Auto-DJ you didn't like it."""
@@ -243,7 +249,6 @@ class AutoDJ(commands.Cog):
                 color=discord.Color.orange(),
             )
         )
-
 
     @autodj.command(name="reset", description="Reset the Auto-DJ session for this server")
     @is_dj()
@@ -269,7 +274,6 @@ class AutoDJ(commands.Cog):
                 color=discord.Color.green(),
             )
         )
-
 
     @autodj.command(name="signals", description="Show what Auto-DJ has learned for this server")
     @cooldown(1, 5.0)

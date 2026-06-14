@@ -14,7 +14,7 @@ class LyricsPaginator(discord.ui.View):
 
         # Split lyrics into pages of max 1500 characters
         self.pages = []
-        lines = lyrics.split('\n')
+        lines = lyrics.split("\n")
         current_page = ""
 
         for line in lines:
@@ -49,12 +49,16 @@ class LyricsPaginator(discord.ui.View):
         return embed
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, emoji="\u25c0")
-    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def prev_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         self.current_page = max(0, self.current_page - 1)
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, emoji="\u25b6")
-    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def next_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         self.current_page = min(len(self.pages) - 1, self.current_page + 1)
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 

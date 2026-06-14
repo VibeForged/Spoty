@@ -32,11 +32,13 @@ class QueueCog(commands.Cog, name="Queue"):
 
     @commands.hybrid_command(name="loop", description="Set loop mode")
     @app_commands.describe(mode="Loop mode: off, track, or queue")
-    @app_commands.choices(mode=[
-        app_commands.Choice(name="Off", value="off"),
-        app_commands.Choice(name="Track", value="track"),
-        app_commands.Choice(name="Queue", value="queue"),
-    ])
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="Off", value="off"),
+            app_commands.Choice(name="Track", value="track"),
+            app_commands.Choice(name="Queue", value="queue"),
+        ]
+    )
     @is_dj()
     @cooldown(1, 2.0)
     async def loop(self, ctx: commands.Context, mode: str) -> None:
@@ -55,9 +57,16 @@ class QueueCog(commands.Cog, name="Queue"):
         await ctx.send(f"Loop mode set to **{loop_mode.value}**")
 
     @commands.hybrid_command(name="shuffle", description="Shuffle the queue")
+    @app_commands.describe(mode="Shuffle mode: 'standard' or 'smart'")
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="standard", value="standard"),
+            app_commands.Choice(name="smart", value="smart"),
+        ]
+    )
     @is_dj()
     @cooldown(1, 3.0)
-    async def shuffle(self, ctx: commands.Context) -> None:
+    async def shuffle(self, ctx: commands.Context, mode: str = "standard") -> None:
         """Shuffle the current queue."""
         player = self.bot.get_player(ctx.guild.id)
         if not player:
@@ -65,11 +74,17 @@ class QueueCog(commands.Cog, name="Queue"):
         if player.queue.is_empty:
             raise QueueEmptyError()
 
-        player.queue.shuffle()
-        await ctx.send(f"Shuffled **{player.queue.size}** tracks")
+        if mode.lower() == "smart":
+            player.queue.smart_shuffle()
+            await ctx.send(f"Smart shuffled (artist-dispersed) **{player.queue.size}** tracks")
+        else:
+            player.queue.shuffle()
+            await ctx.send(f"Shuffled **{player.queue.size}** tracks")
 
     @commands.hybrid_command(name="move", description="Move a track in the queue")
-    @app_commands.describe(from_pos="Current position (1-indexed)", to_pos="New position (1-indexed)")
+    @app_commands.describe(
+        from_pos="Current position (1-indexed)", to_pos="New position (1-indexed)"
+    )
     @is_dj()
     @cooldown(1, 2.0)
     async def move(self, ctx: commands.Context, from_pos: int, to_pos: int) -> None:
@@ -202,7 +217,9 @@ class QueueCog(commands.Cog, name="Queue"):
             await ctx.author.send(embed=embed)
             await ctx.send("Track info sent to your DMs!", ephemeral=True)
         except discord.Forbidden:
-            await ctx.send("Couldn't send DM. Please enable DMs from server members.", ephemeral=True)
+            await ctx.send(
+                "Couldn't send DM. Please enable DMs from server members.", ephemeral=True
+            )
 
 
 async def setup(bot: MusicBot) -> None:

@@ -30,28 +30,63 @@ AMBIENCE_QUERIES: dict[str, str] = {
 }
 
 HELP_CATEGORIES = [
-    {"label": "Music & Playback", "value": "Music", "emoji": "🎵", "desc": "Commands for playing and controlling music"},
-    {"label": "Queue Management", "value": "QueueCog", "emoji": "📜", "desc": "Manage the music queue"},
-    {"label": "Auto-DJ & Discovery", "value": "AutoDJ", "emoji": "🤖", "desc": "Intelligent music recommendations"},
-    {"label": "Audio Effects", "value": "FX", "emoji": "🎛️", "desc": "Filters like bassboost and nightcore"},
-    {"label": "Playlists", "value": "Playlists", "emoji": "📚", "desc": "Save and load custom playlists"},
-    {"label": "Settings & Admin", "value": "Settings", "emoji": "⚙️", "desc": "Server configuration and permissions"},
-    {"label": "Utility & Fun", "value": "Utility", "emoji": "🛠️", "desc": "Stats, history, lyrics, and more"},
+    {
+        "label": "Music & Playback",
+        "value": "Music",
+        "emoji": "🎵",
+        "desc": "Commands for playing and controlling music",
+    },
+    {
+        "label": "Queue Management",
+        "value": "QueueCog",
+        "emoji": "📜",
+        "desc": "Manage the music queue",
+    },
+    {
+        "label": "Auto-DJ & Discovery",
+        "value": "AutoDJ",
+        "emoji": "🤖",
+        "desc": "Intelligent music recommendations",
+    },
+    {
+        "label": "Audio Effects",
+        "value": "FX",
+        "emoji": "🎛️",
+        "desc": "Filters like bassboost and nightcore",
+    },
+    {
+        "label": "Playlists",
+        "value": "Playlists",
+        "emoji": "📚",
+        "desc": "Save and load custom playlists",
+    },
+    {
+        "label": "Settings & Admin",
+        "value": "Settings",
+        "emoji": "⚙️",
+        "desc": "Server configuration and permissions",
+    },
+    {
+        "label": "Utility & Fun",
+        "value": "Utility",
+        "emoji": "🛠️",
+        "desc": "Stats, history, lyrics, and more",
+    },
 ]
+
 
 class HelpSelect(discord.ui.Select):
     def __init__(self, bot: MusicBot):
         self.bot = bot
         options = [
             discord.SelectOption(
-                label=cat["label"],
-                value=cat["value"],
-                emoji=cat["emoji"],
-                description=cat["desc"]
+                label=cat["label"], value=cat["value"], emoji=cat["emoji"], description=cat["desc"]
             )
             for cat in HELP_CATEGORIES
         ]
-        super().__init__(placeholder="Select a command category...", min_values=1, max_values=1, options=options)
+        super().__init__(
+            placeholder="Select a command category...", min_values=1, max_values=1, options=options
+        )
 
     async def callback(self, interaction: discord.Interaction):
         cog_name = self.values[0]
@@ -68,7 +103,7 @@ class HelpSelect(discord.ui.Select):
         embed = discord.Embed(
             title=f"{emoji} {label} Commands",
             description=cog.__doc__ or "No description available.",
-            color=discord.Color.blurple()
+            color=discord.Color.blurple(),
         )
 
         cmds = [c for c in cog.get_commands() if not c.hidden]
@@ -80,13 +115,23 @@ class HelpSelect(discord.ui.Select):
                 if isinstance(cmd, commands.Group):
                     subcommands = [c for c in cmd.commands if not c.hidden]
                     if subcommands:
-                        subs_str = ", ".join(f"`{c.name}`" for c in sorted(subcommands, key=lambda sub: sub.name))
+                        subs_str = ", ".join(
+                            f"`{c.name}`" for c in sorted(subcommands, key=lambda sub: sub.name)
+                        )
                         desc = f"{cmd.help or cmd.description or 'Command group'}\n└ *Subcommands: {subs_str}*"
                         embed.add_field(name=f"/{cmd.name}", value=desc, inline=False)
                     else:
-                        embed.add_field(name=f"/{cmd.name}", value=cmd.help or cmd.description or "Command group", inline=False)
+                        embed.add_field(
+                            name=f"/{cmd.name}",
+                            value=cmd.help or cmd.description or "Command group",
+                            inline=False,
+                        )
                 else:
-                    embed.add_field(name=f"/{cmd.name}", value=cmd.help or cmd.description or "No description", inline=False)
+                    embed.add_field(
+                        name=f"/{cmd.name}",
+                        value=cmd.help or cmd.description or "No description",
+                        inline=False,
+                    )
 
         await interaction.response.edit_message(embed=embed, view=self.view)
 
@@ -143,7 +188,9 @@ class Utility(commands.Cog):
             if isinstance(cmd, commands.Group):
                 subcommands = [c for c in cmd.commands if not c.hidden]
                 if subcommands:
-                    subcommand_names = ", ".join(f"`{c.name}`" for c in sorted(subcommands, key=lambda c: c.name))
+                    subcommand_names = ", ".join(
+                        f"`{c.name}`" for c in sorted(subcommands, key=lambda c: c.name)
+                    )
                     embed.add_field(name="Subcommands", value=subcommand_names, inline=False)
 
             usage = cmd.usage or cmd.signature
@@ -156,17 +203,19 @@ class Utility(commands.Cog):
         embed = discord.Embed(
             title="Spoty Music Bot Help",
             description="Welcome! I'm an advanced music bot with Auto-DJ, Audio Effects, Playlists, and more.\n\n"
-                        "**Quick Start**\n"
-                        "1. Join a voice channel\n"
-                        "2. Use `/play <song>` to start listening\n"
-                        "3. Use `/autodj start` to let me pick the next songs automatically!\n\n"
-                        "*Use the dropdown menu below to explore commands by category.*",
+            "**Quick Start**\n"
+            "1. Join a voice channel\n"
+            "2. Use `/play <song>` to start listening\n"
+            "3. Use `/autodj start` to let me pick the next songs automatically!\n\n"
+            "*Use the dropdown menu below to explore commands by category.*",
             color=discord.Color.blurple(),
         )
 
         # Add basic stats to make the landing page feel alive
         players = len(self.bot.players)
-        embed.set_footer(text=f"Currently rocking out in {players} servers 🎸 | Select a category below!")
+        embed.set_footer(
+            text=f"Currently rocking out in {players} servers 🎸 | Select a category below!"
+        )
 
         view = HelpView(self.bot)
         # We need to store the message in the view for timeout disabling
@@ -231,7 +280,9 @@ class Utility(commands.Cog):
 
         await ctx.send(f"Uptime: **{' '.join(parts)}**")
 
-    @commands.hybrid_command(name="lyrics", description="Get lyrics for the current or specified song")
+    @commands.hybrid_command(
+        name="lyrics", description="Get lyrics for the current or specified song"
+    )
     @app_commands.describe(query="Song to search lyrics for (defaults to current track)")
     @cooldown(1, 5.0)
     async def lyrics(self, ctx: commands.Context, *, query: str | None = None) -> None:

@@ -93,7 +93,9 @@ class MusicQuiz:
         try:
             msg = await self.bot.wait_for("message", check=check, timeout=self.timeout)
             self.scores[msg.author.id] = self.scores.get(msg.author.id, 0) + 1
-            await self.ctx.send(f"Correct! {msg.author.mention} got it! The answer was: **{title}**")
+            await self.ctx.send(
+                f"Correct! {msg.author.mention} got it! The answer was: **{title}**"
+            )
         except TimeoutError:
             await self.ctx.send(f"Time's up! The answer was: **{title}**")
 

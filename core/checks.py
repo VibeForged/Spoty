@@ -30,7 +30,11 @@ def in_music_channel() -> Callable:
     async def predicate(ctx: commands.Context) -> bool:
         if hasattr(ctx.bot, "get_guild_settings"):
             settings = await ctx.bot.get_guild_settings(ctx.guild.id)
-            if settings and settings.music_channel_id and ctx.channel.id != settings.music_channel_id:
+            if (
+                settings
+                and settings.music_channel_id
+                and ctx.channel.id != settings.music_channel_id
+            ):
                 raise WrongChannelError(settings.music_channel_id)
         return True
 

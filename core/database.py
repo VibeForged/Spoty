@@ -33,7 +33,10 @@ async def init_db(database_url: str, create_schema: bool = False) -> None:
     """
     global _engine, _session_factory
 
-    logger.info("Initializing database: {}", database_url.split("@")[-1] if "@" in database_url else database_url)
+    logger.info(
+        "Initializing database: {}",
+        database_url.split("@")[-1] if "@" in database_url else database_url,
+    )
 
     engine_kwargs: dict = {"echo": False, "pool_pre_ping": True}
     # SQLite uses a single file and ignores server-style pooling; tune only for
@@ -44,6 +47,7 @@ async def init_db(database_url: str, create_schema: bool = False) -> None:
     _engine = create_async_engine(database_url, **engine_kwargs)
 
     if _engine.dialect.name == "sqlite":
+
         @event.listens_for(_engine.sync_engine, "connect")
         def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
             cursor = dbapi_connection.cursor()

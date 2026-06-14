@@ -33,6 +33,7 @@ COGS = [
     "cogs.autodj",
     "cogs.utility",
     "cogs.dev",
+    "cogs.soundboard",
 ]
 
 
@@ -159,9 +160,7 @@ class MusicBot(commands.Bot):
         restored = 0
         for gs in rows:
             try:
-                self.add_view(
-                    PlayerControlPanel(self, gs.guild_id), message_id=gs.panel_message_id
-                )
+                self.add_view(PlayerControlPanel(self, gs.guild_id), message_id=gs.panel_message_id)
                 restored += 1
             except Exception:
                 logger.debug("Failed to restore panel for guild {}", gs.guild_id, exc_info=True)
@@ -174,7 +173,9 @@ class MusicBot(commands.Bot):
 
         if self.config.lavalink_enabled and not self.backend_manager.lavalink_ready:
             await self.backend_manager.ensure_ready()
-            logger.info("Audio backend status after ready: {}", self.backend_manager.backend_status())
+            logger.info(
+                "Audio backend status after ready: {}", self.backend_manager.backend_status()
+            )
 
         # Set activity
         await self.change_presence(
@@ -432,6 +433,7 @@ class MusicBot(commands.Bot):
 
         # Shutdown extractor thread pool
         from core.extractor import shutdown_pool
+
         shutdown_pool()
 
         # Close shared HTTP sessions
@@ -454,6 +456,33 @@ class MusicBot(commands.Bot):
 
 def setup_logging(config: BotConfig) -> None:
     """Configure loguru logging."""
+
+    # Define a patcher to mask sensitive secrets in log messages
+    def redact_secrets(record):
+        msg = record["message"]
+        secrets = []
+        if config.bot_token:
+            secrets.append(config.bot_token)
+        if config.spotipy_client_secret:
+            secrets.append(config.spotipy_client_secret)
+        if config.database_url:
+            secrets.append(config.database_url)
+            import urllib.parse
+
+            try:
+                parsed_db = urllib.parse.urlparse(config.database_url)
+                if parsed_db.password:
+                    secrets.append(parsed_db.password)
+            except Exception:
+                pass
+
+        for secret in secrets:
+            if secret and len(secret) > 4 and secret in msg:
+                msg = msg.replace(secret, "********")
+        record["message"] = msg
+
+    logger.configure(patcher=redact_secrets)
+
     # Remove default handler
     logger.remove()
 
@@ -480,6 +509,7 @@ def setup_logging(config: BotConfig) -> None:
 def main() -> None:
     """Entry point."""
     import keep_alive
+
     keep_alive.keep_alive()
 
     # Load environment variables

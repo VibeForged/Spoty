@@ -95,9 +95,7 @@ class LastFmSource(RecommendationSource):
         logger.debug("LastFmSource: {} candidates in {:.0f}ms", len(scored), latency)
         return SourceResult(scored, self.name, confidence=confidence, latency_ms=latency)
 
-    async def _fetch_similar_tracks(
-        self, api_key: str, artist: str, track: str
-    ) -> list[dict]:
+    async def _fetch_similar_tracks(self, api_key: str, artist: str, track: str) -> list[dict]:
         """Call Last.fm track.getSimilar API."""
         params = {
             "method": "track.getSimilar",

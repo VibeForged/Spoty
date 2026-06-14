@@ -25,6 +25,7 @@ class MusicPlayer:
         self.guild_id = guild_id
         self._backend = backend
         self.queue = MusicQueue()
+        self.queue.on_add = self.pre_resolve_next_track
         self.current: Track | None = None
         self.volume: int = 50
         self.active_filters: list[str] = []
@@ -118,6 +119,7 @@ class MusicPlayer:
 
             if next_track.lazy_query:
                 from core.extractor import search_track
+
                 resolved = await search_track(next_track.lazy_query)
                 if resolved:
                     next_track.url = resolved.url
@@ -154,6 +156,9 @@ class MusicPlayer:
 
             # Pre-emptive Auto-DJ: start filling queue when it's getting low
             await self._maybe_prefill_auto_dj()
+
+            # Start pre-resolving the next track in the background
+            self.pre_resolve_next_track()
 
     async def _wait_and_play_next(self) -> None:
         """Wait for the current track to finish, then play next."""
@@ -272,7 +277,11 @@ class MusicPlayer:
         else:
             preset_definition = None
 
-        if preset_definition and preset_requires_ffmpeg(preset_definition) and self.backend_name == "lavalink":
+        if (
+            preset_definition
+            and preset_requires_ffmpeg(preset_definition)
+            and self.backend_name == "lavalink"
+        ):
             await self._switch_to_ffmpeg("Selected FX requires FFmpeg-compatible playback")
 
         self._active_preset_definition = preset_definition
@@ -382,7 +391,9 @@ class MusicPlayer:
         self._consecutive_failures += 1
         logger.error(
             "Failed to play track in guild {}: {} (consecutive: {})",
-            self.guild_id, error, self._consecutive_failures,
+            self.guild_id,
+            error,
+            self._consecutive_failures,
         )
         if self._consecutive_failures >= 3:
             logger.error("Too many consecutive failures in guild {}, stopping", self.guild_id)
@@ -449,6 +460,7 @@ class MusicPlayer:
             embed.set_thumbnail(url=track.thumbnail)
 
         from core.ui.now_playing import NowPlayingView
+
         view = NowPlayingView(self) if settings.interactive_buttons else None
         await self.text_channel.send(embed=embed, view=view)
 
@@ -501,7 +513,9 @@ class MusicPlayer:
                 track.requester_name = "Auto-DJ"
                 self.queue.add(track)
 
-            logger.info("Auto-DJ: added {} tracks to queue for guild {}", len(new_tracks), self.guild_id)
+            logger.info(
+                "Auto-DJ: added {} tracks to queue for guild {}", len(new_tracks), self.guild_id
+            )
             await self.play_next()
             return True
 
@@ -593,6 +607,46 @@ class MusicPlayer:
             self._inactive_task.cancel()
             self._inactive_task = None
 
+    def pre_resolve_next_track(self) -> None:
+        """Spawn a background task to pre-resolve the next track in the queue."""
+        if self._destroyed:
+            return
+
+        # Only pre-resolve if the player is currently active/playing
+        if not self.is_playing:
+            return
+
+        # Cancel existing preresolve task if any
+        if (
+            hasattr(self, "_preresolve_task")
+            and self._preresolve_task
+            and not self._preresolve_task.done()
+        ):
+            self._preresolve_task.cancel()
+
+        self._preresolve_task = asyncio.create_task(self._pre_resolve_task_loop())
+
+    async def _pre_resolve_task_loop(self) -> None:
+        try:
+            next_track = self.queue.peek()
+            if next_track and next_track.lazy_query:
+                logger.info("Pre-resolving next track in queue: {}", next_track.lazy_query[:60])
+                from core.extractor import search_track
+
+                resolved = await search_track(next_track.lazy_query)
+                if resolved:
+                    next_track.url = resolved.url
+                    next_track.title = resolved.title
+                    next_track.duration = resolved.duration
+                    next_track.thumbnail = resolved.thumbnail
+                    next_track.stream_url = resolved.stream_url
+                    next_track.lazy_query = None
+                    logger.info("Successfully pre-resolved next track: {}", next_track.title[:60])
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug("Failed to pre-resolve next track: {}", e)
+
     async def destroy(self) -> None:
         if self._destroyed:
             return
@@ -603,6 +657,12 @@ class MusicPlayer:
         self.cancel_sleep_timer()
         if self._play_task:
             self._play_task.cancel()
+        if (
+            hasattr(self, "_preresolve_task")
+            and self._preresolve_task
+            and not self._preresolve_task.done()
+        ):
+            self._preresolve_task.cancel()
         if self._autodj_prefill_task and not self._autodj_prefill_task.done():
             self._autodj_prefill_task.cancel()
 

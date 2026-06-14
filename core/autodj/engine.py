@@ -79,26 +79,51 @@ class AutoDJEngine:
         """Get the current session for a guild, if one exists."""
         return self._sessions.get(guild_id)
 
-    async def get_or_create_session(self, guild_id: int, seed_track: Track | None = None) -> SessionContext:
+    async def get_or_create_session(
+        self, guild_id: int, seed_track: Track | None = None
+    ) -> SessionContext:
         """Get or create an Auto-DJ session for a guild."""
         session = self._sessions.get(guild_id)
 
         if session is None or session.should_reset():
             if session and session.should_reset():
-                logger.info("Auto-DJ: resetting stale session for guild {} (served {})", guild_id, session.tracks_served)
+                logger.info(
+                    "Auto-DJ: resetting stale session for guild {} (served {})",
+                    guild_id,
+                    session.tracks_served,
+                )
             session = SessionContext(guild_id=guild_id, seed_track=seed_track)
 
             # Load persistent learning signals from database
             try:
                 from core.repositories import AutoDJFeedbackRepo
+
                 signals = await AutoDJFeedbackRepo.get_signals_for_session(guild_id)
                 for s in signals:
                     if s.signal == "skip":
-                        session.skip_signals[s.track_url] = session.skip_signals.get(s.track_url, 0) + 1
+                        session.skip_signals[s.track_url] = (
+                            session.skip_signals.get(s.track_url, 0) + 1
+                        )
+                        if s.artist_hint:
+                            artist_lower = s.artist_hint.lower().strip()
+                            session.skip_artists[artist_lower] = (
+                                session.skip_artists.get(artist_lower, 0) + 1
+                            )
                     elif s.signal == "complete":
-                        session.completion_signals[s.track_url] = session.completion_signals.get(s.track_url, 0) + 1
+                        session.completion_signals[s.track_url] = (
+                            session.completion_signals.get(s.track_url, 0) + 1
+                        )
+                        if s.artist_hint:
+                            artist_lower = s.artist_hint.lower().strip()
+                            session.completion_artists[artist_lower] = (
+                                session.completion_artists.get(artist_lower, 0) + 1
+                            )
             except Exception:
-                logger.debug("Auto-DJ: failed to load persistent signals for guild {}", guild_id, exc_info=True)
+                logger.debug(
+                    "Auto-DJ: failed to load persistent signals for guild {}",
+                    guild_id,
+                    exc_info=True,
+                )
 
             self._sessions[guild_id] = session
         elif seed_track:
@@ -179,31 +204,35 @@ class AutoDJEngine:
     async def record_skip(self, guild_id: int, track: Track) -> None:
         """Record that a track was skipped (negative signal)."""
         session = self._sessions.get(guild_id)
+        artist, _ = parse_artist_title(track.title)
         if session:
-            session.record_skip(track.url)
+            session.record_skip(track.url, artist)
 
         from core.repositories import AutoDJFeedbackRepo
+
         await AutoDJFeedbackRepo.add_signal(
             guild_id=guild_id,
             track_url=track.url,
             signal="skip",
             source=track.source or "unknown",
-            artist_hint=track.title.split("-")[0].strip() if "-" in track.title else None
+            artist_hint=artist,
         )
 
     async def record_completion(self, guild_id: int, track: Track) -> None:
         """Record that a track played to completion (positive signal)."""
         session = self._sessions.get(guild_id)
+        artist, _ = parse_artist_title(track.title)
         if session:
-            session.record_completion(track.url)
+            session.record_completion(track.url, artist)
 
         from core.repositories import AutoDJFeedbackRepo
+
         await AutoDJFeedbackRepo.add_signal(
             guild_id=guild_id,
             track_url=track.url,
             signal="complete",
             source=track.source or "unknown",
-            artist_hint=track.title.split("-")[0].strip() if "-" in track.title else None
+            artist_hint=artist,
         )
 
     async def _fetch_all_sources(self, context: SessionContext) -> list[ScoredTrack]:

@@ -50,6 +50,11 @@ class Settings(commands.Cog):
         )
         embed.add_field(name="Announce Songs", value=str(gs.announce_songs), inline=True)
         embed.add_field(name="Interactive Buttons", value=str(gs.interactive_buttons), inline=True)
+        embed.add_field(
+            name="Soundboard Volume",
+            value=f"{getattr(gs, 'soundboard_volume', 60)}%",
+            inline=True,
+        )
         embed.add_field(name="Auto-DJ", value=str(gs.autoplay), inline=True)
         embed.add_field(name="Queue Locked", value=str(gs.queue_locked), inline=True)
         embed.add_field(
@@ -173,6 +178,21 @@ class Settings(commands.Cog):
         self.bot.invalidate_settings_cache(ctx.guild.id)
         await ctx.send(f"Default volume set to **{volume}%**")
 
+    @settings.command(name="soundboard_volume", description="Set default soundboard volume")
+    @app_commands.describe(volume="Soundboard volume (0-200)")
+    @is_admin()
+    @cooldown(1, 5.0)
+    async def settings_soundboard_volume(self, ctx: commands.Context, volume: int) -> None:
+        """Set the volume for soundboard clips."""
+        if volume < 0 or volume > 200:
+            await ctx.send("Volume must be between 0 and 200.", ephemeral=True)
+            return
+        from core.repositories import GuildSettingsRepo
+
+        await GuildSettingsRepo.update(ctx.guild.id, soundboard_volume=volume)
+        self.bot.invalidate_settings_cache(ctx.guild.id)
+        await ctx.send(f"Soundboard volume set to **{volume}%**")
+
     @settings.command(
         name="queue_limit", description="Max tracks one member can queue (0 = unlimited)"
     )
@@ -210,7 +230,10 @@ class Settings(commands.Cog):
             await ctx.send("Default FX **cleared**.")
             return
 
-        if name not in BUILTIN_PRESETS and await FXPresetRepo.get_by_name(ctx.guild.id, name) is None:
+        if (
+            name not in BUILTIN_PRESETS
+            and await FXPresetRepo.get_by_name(ctx.guild.id, name) is None
+        ):
             await ctx.send(
                 f"Unknown preset: `{preset}`. Use `/fxpreset list` to see options.", ephemeral=True
             )
@@ -304,8 +327,6 @@ class Settings(commands.Cog):
         await GuildSettingsRepo.update(ctx.guild.id, dj_role_id=role.id)
         self.bot.invalidate_settings_cache(ctx.guild.id)
         await ctx.send(f"DJ role set to {role.mention}")
-
-
 
     @commands.hybrid_command(name="lockqueue", description="Toggle queue lock")
     @is_dj()
@@ -404,9 +425,7 @@ class Settings(commands.Cog):
 
         removed = await PermissionRepo.remove_override(ctx.guild.id, command, role.id)
         if removed:
-            await ctx.send(
-                f"Removed permission override for **{command}** on {role.mention}."
-            )
+            await ctx.send(f"Removed permission override for **{command}** on {role.mention}.")
         else:
             await ctx.send(
                 f"No override found for **{command}** on {role.mention}.", ephemeral=True
@@ -415,9 +434,7 @@ class Settings(commands.Cog):
     @permissions.command(name="reset", description="Reset permission overrides")
     @app_commands.describe(command="Command to reset (leave empty to reset all)")
     @cooldown(1, 5.0)
-    async def permissions_reset(
-        self, ctx: commands.Context, command: str | None = None
-    ) -> None:
+    async def permissions_reset(self, ctx: commands.Context, command: str | None = None) -> None:
         """Reset permission overrides for a command or all commands."""
         from core.repositories import PermissionRepo
 
@@ -435,8 +452,9 @@ class Settings(commands.Cog):
             count = await PermissionRepo.reset_all(ctx.guild.id)
             await ctx.send(f"Removed **{count}** permission override(s) for this server.")
 
-
-    @commands.hybrid_command(name="setup", description="Setup the dedicated music channel and control panel")
+    @commands.hybrid_command(
+        name="setup", description="Setup the dedicated music channel and control panel"
+    )
     @is_admin()
     @cooldown(1, 10.0)
     async def setup_music(self, ctx: commands.Context) -> None:
@@ -445,6 +463,7 @@ class Settings(commands.Cog):
 
         # Check if we already have one
         from core.repositories import GuildSettingsRepo
+
         gs = await self.bot.get_guild_settings(ctx.guild.id)
 
         channel = None
@@ -455,20 +474,23 @@ class Settings(commands.Cog):
             # Create a new channel
             overwrites = {
                 ctx.guild.default_role: discord.PermissionOverwrite(send_messages=True),
-                ctx.guild.me: discord.PermissionOverwrite(send_messages=True, embed_links=True, read_message_history=True)
+                ctx.guild.me: discord.PermissionOverwrite(
+                    send_messages=True, embed_links=True, read_message_history=True
+                ),
             }
             try:
                 channel = await ctx.guild.create_text_channel(
                     name="music-requests",
                     topic="Request songs here and use the control panel below!",
                     overwrites=overwrites,
-                    reason="Spoty Music Bot Setup"
+                    reason="Spoty Music Bot Setup",
                 )
             except discord.Forbidden:
                 await ctx.send("I don't have permission to create channels!", ephemeral=True)
                 return
 
         from core.ui.player_control import PlayerControlPanel, build_panel_embed
+
         player = self.bot.get_player(ctx.guild.id)
 
         embed = build_panel_embed(player)
@@ -478,15 +500,14 @@ class Settings(commands.Cog):
         msg = await channel.send(embed=embed, view=view)
 
         await GuildSettingsRepo.update(
-            ctx.guild.id,
-            music_channel_id=channel.id,
-            panel_message_id=msg.id
+            ctx.guild.id, music_channel_id=channel.id, panel_message_id=msg.id
         )
         self.bot.invalidate_settings_cache(ctx.guild.id)
 
-        await ctx.send(f"Setup complete! Head over to {channel.mention} to control the music.", ephemeral=True)
+        await ctx.send(
+            f"Setup complete! Head over to {channel.mention} to control the music.", ephemeral=True
+        )
 
 
 async def setup(bot: MusicBot) -> None:
     await bot.add_cog(Settings(bot))
-

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -19,7 +19,7 @@ class Track:
     thumbnail: str | None = None
     stream_url: str | None = None  # Direct audio stream URL (from yt-dlp extraction)
     lazy_query: str | None = None
-    added_at: datetime = field(default_factory=datetime.utcnow)
+    added_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def duration_str(self) -> str:

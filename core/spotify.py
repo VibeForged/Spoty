@@ -24,7 +24,9 @@ class SpotifyScraper:
         Returns: (playlist_name, list_of_search_queries)
         """
         session = await cls._get_session()
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+        }
 
         playlist_name = "Spotify Import"
         try:
@@ -36,9 +38,14 @@ class SpotifyScraper:
 
             # Extract playlist/album name
             import html as html_lib
+
             title_match = re.search(r'<meta property="og:title" content="(.*?)"', html)
             if title_match:
-                playlist_name = html_lib.unescape(title_match.group(1)).replace("&#183;", "·").replace("&middot;", "·")
+                playlist_name = (
+                    html_lib.unescape(title_match.group(1))
+                    .replace("&#183;", "·")
+                    .replace("&middot;", "·")
+                )
 
             track_urls = re.findall(r'<meta name="music:song" content="(.*?)"', html)
 
@@ -64,33 +71,46 @@ class SpotifyScraper:
                         try:
                             # Use a timeout so it doesn't hang forever on bad Windows sockets
                             timeout = aiohttp.ClientTimeout(total=10)
-                            async with session.get(track_url, headers=headers, timeout=timeout) as tr_resp:
+                            async with session.get(
+                                track_url, headers=headers, timeout=timeout
+                            ) as tr_resp:
                                 if tr_resp.status == 200:
                                     tr_html = await tr_resp.text()
-                                    t_match = re.search(r'<meta property="og:title" content="(.*?)"', tr_html)
-                                    d_match = re.search(r'<meta property="og:description" content="(.*?)"', tr_html)
+                                    t_match = re.search(
+                                        r'<meta property="og:title" content="(.*?)"', tr_html
+                                    )
+                                    d_match = re.search(
+                                        r'<meta property="og:description" content="(.*?)"', tr_html
+                                    )
 
                                     t_val = html_lib.unescape(t_match.group(1)) if t_match else None
                                     d_val = html_lib.unescape(d_match.group(1)) if d_match else None
 
                                     if t_val and d_val:
                                         # Extract artist (usually before the first " · " or " - ")
-                                        d_val = d_val.replace("&#183;", "·").replace("&middot;", "·")
-                                        artist_segment = d_val.split('·')[0].split('-')[0].strip()
+                                        d_val = d_val.replace("&#183;", "·").replace(
+                                            "&middot;", "·"
+                                        )
+                                        artist_segment = d_val.split("·")[0].split("-")[0].strip()
                                         return f"{t_val} {artist_segment}"
                                     elif t_val:
                                         return t_val
                                 elif tr_resp.status in (429, 500, 502, 503, 504):
                                     # Rate limit or server error - wait and retry
-                                    await asyncio.sleep(2 ** attempt)
+                                    await asyncio.sleep(2**attempt)
                                     continue
                                 else:
-                                    break # Other HTTP error, don't retry
+                                    break  # Other HTTP error, don't retry
                         except TimeoutError:
                             logger.debug("Timeout fetching {}, attempt {}", track_url, attempt + 1)
                             await asyncio.sleep(1)
                         except Exception as e:
-                            logger.debug("Track meta fetch failed for {} (attempt {}): {}", track_url, attempt + 1, e)
+                            logger.debug(
+                                "Track meta fetch failed for {} (attempt {}): {}",
+                                track_url,
+                                attempt + 1,
+                                e,
+                            )
                             await asyncio.sleep(1)
                     return None
 

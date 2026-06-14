@@ -69,7 +69,9 @@ def filter_duplicates(
         if artist:
             artist_count = sum(1 for a in accepted_artists if a == artist)
             if artist_count >= 2:
-                logger.trace("Dedup: artist cooldown — {} ({})", artist, candidate.track.short_title)
+                logger.trace(
+                    "Dedup: artist cooldown — {} ({})", artist, candidate.track.short_title
+                )
                 continue
 
         # Level 4: Duration filter (skip very long tracks)

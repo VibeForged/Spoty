@@ -155,7 +155,9 @@ class BackendManager:
                 return LavalinkBackend(vc, self.bot.config)
             except Exception as exc:
                 self.last_lavalink_error = str(exc)
-                logger.warning("Lavalink voice connect failed for guild {}: {}", channel.guild.id, exc)
+                logger.warning(
+                    "Lavalink voice connect failed for guild {}: {}", channel.guild.id, exc
+                )
         elif self.bot.config.lavalink_enabled:
             detail = self.last_lavalink_error or "node is not CONNECTED"
             logger.info(

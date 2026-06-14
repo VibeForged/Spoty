@@ -28,15 +28,6 @@ def score_candidates(candidates: list[ScoredTrack], context: SessionContext) -> 
 
     recent_artists_lower = set(context.recent_artists)
 
-    # Build per-artist skip/completion counts from signals
-    artist_skip_counts: dict[str, int] = {}
-    artist_complete_counts: dict[str, int] = {}
-    for url, count in context.skip_signals.items():
-        # We don't have artist for every URL in signals, so this is best-effort
-        artist_skip_counts[url] = count
-    for url, count in context.completion_signals.items():
-        artist_complete_counts[url] = count
-
     for candidate in candidates:
         score = candidate.score  # Start with base source weight
 
@@ -73,13 +64,29 @@ def score_candidates(candidates: list[ScoredTrack], context: SessionContext) -> 
         if url_skip_count > 0:
             score -= 0.15 * url_skip_count
 
+        # Artist skip penalty
+        if artist_lower:
+            artist_skip_count = getattr(context, "skip_artists", {}).get(artist_lower, 0)
+            if artist_skip_count > 0:
+                score -= 0.05 * artist_skip_count
+
         # Completion bonus
         url_complete_count = context.completion_signals.get(candidate.track.url, 0)
         if url_complete_count > 0:
             score += 0.1
 
+        # Artist completion bonus
+        if artist_lower:
+            artist_complete_count = getattr(context, "completion_artists", {}).get(artist_lower, 0)
+            if artist_complete_count > 0:
+                score += 0.1
+
         # Filter out very short tracks (< 30s) unless seed is also short
-        if candidate.track.duration and candidate.track.duration < 30 and (not seed_duration or seed_duration >= 60):
+        if (
+            candidate.track.duration
+            and candidate.track.duration < 30
+            and (not seed_duration or seed_duration >= 60)
+        ):
             score -= 0.5
 
         # Filter out live streams

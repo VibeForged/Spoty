@@ -87,9 +87,7 @@ class PlaylistRepository:
         await session.flush()
 
     @staticmethod
-    async def increment_track_count(
-        session: AsyncSession, playlist_id: int, amount: int
-    ) -> None:
+    async def increment_track_count(session: AsyncSession, playlist_id: int, amount: int) -> None:
         await session.execute(
             update(Playlist)
             .where(Playlist.id == playlist_id)

@@ -47,6 +47,7 @@ class GuildSettings(Base):
     # FX preset auto-applied to new playback sessions (None = no default).
     default_fx: Mapped[str | None] = mapped_column(String(50), nullable=True)
     inactivity_timeout: Mapped[int] = mapped_column(Integer, default=300)
+    soundboard_volume: Mapped[int] = mapped_column(Integer, default=60)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -58,7 +59,9 @@ class Playlist(Base):
 
     __tablename__ = "playlists"
     __table_args__ = (
-        UniqueConstraint("guild_id", "owner_id", "name_key", name="uq_playlist_guild_owner_name_key"),
+        UniqueConstraint(
+            "guild_id", "owner_id", "name_key", name="uq_playlist_guild_owner_name_key"
+        ),
         UniqueConstraint("share_code", name="uq_playlist_share_code"),
         Index("idx_playlists_guild_owner", "guild_id", "owner_id"),
     )
@@ -137,9 +140,7 @@ class FXPreset(Base):
     """Custom FX preset created by a guild member."""
 
     __tablename__ = "fx_presets"
-    __table_args__ = (
-        UniqueConstraint("guild_id", "name", name="uq_fx_guild_name"),
-    )
+    __table_args__ = (UniqueConstraint("guild_id", "name", name="uq_fx_guild_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     guild_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -228,3 +229,17 @@ class QueueState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class SoundboardSound(Base):
+    """Custom soundboard sounds uploaded or saved by users in a guild."""
+
+    __tablename__ = "soundboard_sounds"
+    __table_args__ = (UniqueConstraint("guild_id", "name", name="uq_soundboard_guild_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    created_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

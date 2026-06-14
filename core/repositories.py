@@ -25,6 +25,7 @@ from core.models import (
     History,
     Permission,
     QueueState,
+    SoundboardSound,
     Stats,
 )
 
@@ -79,9 +80,7 @@ class GuildSettingsRepo:
     async def delete(guild_id: int) -> None:
         """Delete settings for a guild."""
         async with get_session() as session:
-            await session.execute(
-                delete(GuildSettings).where(GuildSettings.guild_id == guild_id)
-            )
+            await session.execute(delete(GuildSettings).where(GuildSettings.guild_id == guild_id))
 
 
 class HistoryRepo:
@@ -256,9 +255,7 @@ class FXPresetRepo:
         """Get a custom preset by name."""
         async with get_session() as session:
             result = await session.execute(
-                select(FXPreset).where(
-                    FXPreset.guild_id == guild_id, FXPreset.name == name
-                )
+                select(FXPreset).where(FXPreset.guild_id == guild_id, FXPreset.name == name)
             )
             preset = result.scalar_one_or_none()
             if preset:
@@ -270,9 +267,7 @@ class FXPresetRepo:
         """List all custom presets for a guild."""
         async with get_session() as session:
             result = await session.execute(
-                select(FXPreset)
-                .where(FXPreset.guild_id == guild_id)
-                .order_by(FXPreset.name)
+                select(FXPreset).where(FXPreset.guild_id == guild_id).order_by(FXPreset.name)
             )
             presets = list(result.scalars().all())
             for preset in presets:
@@ -284,9 +279,7 @@ class FXPresetRepo:
         """Delete a custom preset. Returns True if deleted."""
         async with get_session() as session:
             result = await session.execute(
-                delete(FXPreset).where(
-                    FXPreset.guild_id == guild_id, FXPreset.name == name
-                )
+                delete(FXPreset).where(FXPreset.guild_id == guild_id, FXPreset.name == name)
             )
             return result.rowcount > 0
 
@@ -359,9 +352,7 @@ class StatsRepo:
 
         try:
             async with get_session() as session:
-                session.add(
-                    Stats(guild_id=guild_id, total_plays=1, total_seconds_played=duration)
-                )
+                session.add(Stats(guild_id=guild_id, total_plays=1, total_seconds_played=duration))
         except IntegrityError:
             await StatsRepo._try_increment(guild_id, duration)
 
@@ -369,9 +360,7 @@ class StatsRepo:
     async def get(guild_id: int) -> Stats | None:
         """Get stats for a guild."""
         async with get_session() as session:
-            result = await session.execute(
-                select(Stats).where(Stats.guild_id == guild_id)
-            )
+            result = await session.execute(select(Stats).where(Stats.guild_id == guild_id))
             return result.scalar_one_or_none()
 
 
@@ -402,9 +391,7 @@ class PermissionRepo:
             return list(result.scalars().all())
 
     @staticmethod
-    async def set_override(
-        guild_id: int, command_name: str, role_id: int, allowed: bool
-    ) -> None:
+    async def set_override(guild_id: int, command_name: str, role_id: int, allowed: bool) -> None:
         """Upsert a permission override for a command and role."""
         async with get_session() as session:
             result = await session.execute(
@@ -485,9 +472,7 @@ class AutoDJFeedbackRepo:
             session.add(entry)
 
     @staticmethod
-    async def get_signals_for_session(
-        guild_id: int, limit: int = 500
-    ) -> list[AutoDJFeedback]:
+    async def get_signals_for_session(guild_id: int, limit: int = 500) -> list[AutoDJFeedback]:
         """Get recent feedback signals for a guild's scoring context."""
         async with get_session() as session:
             result = await session.execute(
@@ -526,3 +511,65 @@ class QueueStateRepo:
         """Remove a guild's stored snapshot (after restore or stop)."""
         async with get_session() as session:
             await session.execute(delete(QueueState).where(QueueState.guild_id == guild_id))
+
+
+class SoundboardRepo:
+    """Repository for guild custom soundboard sounds CRUD."""
+
+    @staticmethod
+    async def get(guild_id: int, name: str) -> SoundboardSound | None:
+        """Get a sound by name for a guild."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(SoundboardSound).where(
+                    SoundboardSound.guild_id == guild_id,
+                    SoundboardSound.name == name.lower().strip(),
+                )
+            )
+            return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_all(guild_id: int) -> list[SoundboardSound]:
+        """Get all custom sounds for a guild."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(SoundboardSound).where(SoundboardSound.guild_id == guild_id)
+            )
+            return list(result.scalars().all())
+
+    @staticmethod
+    async def add(guild_id: int, name: str, url: str, created_by: int) -> SoundboardSound:
+        """Add a custom soundboard sound. Returns the created model."""
+        async with get_session() as session:
+            name_cleaned = name.lower().strip()
+            # Check if it already exists
+            result = await session.execute(
+                select(SoundboardSound).where(
+                    SoundboardSound.guild_id == guild_id, SoundboardSound.name == name_cleaned
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                existing.url = url
+                existing.created_by = created_by
+                await session.flush()
+                return existing
+
+            sound = SoundboardSound(
+                guild_id=guild_id, name=name_cleaned, url=url, created_by=created_by
+            )
+            session.add(sound)
+            await session.flush()
+            return sound
+
+    @staticmethod
+    async def delete(guild_id: int, name: str) -> bool:
+        """Delete a custom soundboard sound by name. Returns True if deleted."""
+        async with get_session() as session:
+            result = await session.execute(
+                delete(SoundboardSound).where(
+                    SoundboardSound.guild_id == guild_id,
+                    SoundboardSound.name == name.lower().strip(),
+                )
+            )
+            return result.rowcount > 0

@@ -41,7 +41,9 @@ class NowPlayingView(discord.ui.View):
         return self.player._destroyed
 
     @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, emoji="\u23f8")
-    async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def pause_resume(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         if self._check_player(interaction):
             await interaction.response.send_message("Player is no longer active.", ephemeral=True)
             self.stop()
@@ -66,7 +68,9 @@ class NowPlayingView(discord.ui.View):
         self.stop()
 
     @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="\u23f9")
-    async def stop_player(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def stop_player(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         if self._check_player(interaction):
             await interaction.response.send_message("Player is no longer active.", ephemeral=True)
             self.stop()

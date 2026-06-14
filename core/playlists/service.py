@@ -269,14 +269,19 @@ class PlaylistService:
             src_playlist = await PlaylistService._get_copy_source(
                 session, guild_id, owner_id, source
             )
-            target_name = await PlaylistService._available_name(session, guild_id, owner_id, new_name)
+            target_name = await PlaylistService._available_name(
+                session, guild_id, owner_id, new_name
+            )
             target_key = target_name.casefold()
             new_playlist = await PlaylistRepository.create(
                 session, guild_id, owner_id, target_name, target_key
             )
             src_items = await PlaylistItemRepository.list_items(session, src_playlist.id)
             added = await PlaylistService._bulk_insert_items(
-                session, new_playlist.id, owner_id, [PlaylistService._input_from_item(i) for i in src_items]
+                session,
+                new_playlist.id,
+                owner_id,
+                [PlaylistService._input_from_item(i) for i in src_items],
             )
             new_playlist.track_count = added
             return new_playlist
@@ -300,7 +305,9 @@ class PlaylistService:
             playlist = await PlaylistRepository.create(
                 session, guild_id, owner_id, target_name, target_name.casefold()
             )
-            added = await PlaylistService._bulk_insert_items(session, playlist.id, owner_id, item_inputs)
+            added = await PlaylistService._bulk_insert_items(
+                session, playlist.id, owner_id, item_inputs
+            )
             playlist.track_count = added
             return playlist
 
@@ -316,7 +323,9 @@ class PlaylistService:
             playlist = await PlaylistRepository.create(
                 session, guild_id, owner_id, name, name.casefold()
             )
-            items = await PlaylistItemRepository.list_items(session, source.id, limit=MAX_IMPORT_ITEMS)
+            items = await PlaylistItemRepository.list_items(
+                session, source.id, limit=MAX_IMPORT_ITEMS
+            )
             added = await PlaylistService._bulk_insert_items(
                 session, playlist.id, owner_id, [PlaylistService._input_from_item(i) for i in items]
             )
@@ -376,7 +385,9 @@ class PlaylistService:
                     requester_id=owner_id,
                     source=item.source,
                     thumbnail=item.thumbnail,
-                    lazy_query=item.external_id if item.source == "spotify" and item.external_id else None
+                    lazy_query=item.external_id
+                    if item.source == "spotify" and item.external_id
+                    else None,
                 )
                 for item in items
             ]
@@ -424,16 +435,22 @@ class PlaylistService:
     @staticmethod
     async def _available_name(session, guild_id: int, owner_id: int, base_name: str) -> str:
         base_name, base_key = PlaylistService.normalize_name(base_name)
-        if await PlaylistRepository.get_owned_by_name(session, guild_id, owner_id, base_key) is None:
+        if (
+            await PlaylistRepository.get_owned_by_name(session, guild_id, owner_id, base_key)
+            is None
+        ):
             return base_name
 
         for suffix in range(2, 1000):
             suffix_text = f"_{suffix}"
             trimmed = base_name[: 100 - len(suffix_text)]
             candidate = f"{trimmed}{suffix_text}"
-            if await PlaylistRepository.get_owned_by_name(
-                session, guild_id, owner_id, candidate.casefold()
-            ) is None:
+            if (
+                await PlaylistRepository.get_owned_by_name(
+                    session, guild_id, owner_id, candidate.casefold()
+                )
+                is None
+            ):
                 return candidate
         raise PlaylistAlreadyExistsError(base_name)
 

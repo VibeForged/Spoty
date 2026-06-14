@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import re
+import socket
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from urllib.parse import urlparse
 
 import yt_dlp
 from cachetools import TTLCache
@@ -31,6 +34,7 @@ def _has_disallowed_scheme(target: str) -> bool:
     match = _URL_SCHEME_RE.match(target.strip())
     return match is not None and match.group(1).lower() not in ("http", "https")
 
+
 # yt-dlp options for audio extraction (no download)
 def _get_ydl_opts() -> dict[str, Any]:
     """Get yt-dlp options with optional cookie support."""
@@ -49,6 +53,7 @@ def _get_ydl_opts() -> dict[str, Any]:
     if config.ytdlp_cookies_file:
         opts["cookiefile"] = config.ytdlp_cookies_file
     return opts
+
 
 YDL_OPTS = _get_ydl_opts()
 
@@ -78,6 +83,29 @@ def _extract_sync(url: str, opts: dict[str, Any] | None = None) -> dict[str, Any
         return None
 
 
+def _is_ssrf_risk(url: str) -> bool:
+    """Return True if the hostname resolves to a private or loopback IP address."""
+    try:
+        parsed = urlparse(url)
+        if not parsed.hostname:
+            return False
+        # Resolve hostname to all associated IP addresses
+        addr_infos = socket.getaddrinfo(parsed.hostname, None)
+        for addr_info in addr_infos:
+            ip = addr_info[4][0]
+            ip_obj = ipaddress.ip_address(ip)
+            if (
+                ip_obj.is_loopback
+                or ip_obj.is_private
+                or ip_obj.is_link_local
+                or ip_obj.is_reserved
+            ):
+                return True
+    except Exception as e:
+        logger.debug("SSRF check exception for {}: {}", url, e)
+    return False
+
+
 async def extract_info(url: str, opts: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Extract info from a URL asynchronously using yt-dlp.
 
@@ -92,6 +120,13 @@ async def extract_info(url: str, opts: dict[str, Any] | None = None) -> dict[str
     """
     if _has_disallowed_scheme(url):
         logger.warning("Refusing to extract non-http(s) URL: {}", url[:80])
+        return None
+
+    if url.startswith(("http://", "https://")) and _is_ssrf_risk(url):
+        logger.warning(
+            "Refusing to extract URL pointing to private/local network (SSRF protection): {}",
+            url[:80],
+        )
         return None
 
     # Check cache
@@ -294,6 +329,7 @@ async def update_ytdlp() -> bool:
     def _update() -> bool:
         try:
             import subprocess
+
             result = subprocess.run(
                 ["pip", "install", "--upgrade", "yt-dlp"],
                 capture_output=True,

@@ -44,6 +44,10 @@ class BotConfig(BaseSettings):
     # Worker threads for the (blocking) yt-dlp extractor, shared across all guilds.
     ytdlp_max_workers: int = 8
 
+    # --- Spotify (Optional - for playlist import) ---
+    spotipy_client_id: str = ""
+    spotipy_client_secret: str = ""
+
     # --- Last.fm (free API for Auto-DJ recommendations) ---
     lastfm_api_key: str = ""
 

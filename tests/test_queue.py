@@ -211,3 +211,22 @@ class TestMusicQueue:
         removed = q.remove_by_requester(1)
         assert removed == 2
         assert [t.url for t in q.tracks] == ["u2"]
+
+    def test_smart_shuffle(self):
+        q = MusicQueue()
+        q.add(Track(title="Artist A - Song 1", url="u1"))
+        q.add(Track(title="Artist A - Song 2", url="u2"))
+        q.add(Track(title="Artist B - Song 1", url="u3"))
+        q.add(Track(title="Artist B - Song 2", url="u4"))
+        q.add(Track(title="Artist C - Song 1", url="u5"))
+
+        q.smart_shuffle()
+
+        from core.autodj.utils import parse_artist_title
+
+        tracks = q.tracks
+        for i in range(len(tracks) - 1):
+            artist1, _ = parse_artist_title(tracks[i].title)
+            artist2, _ = parse_artist_title(tracks[i + 1].title)
+            if artist1 and artist2:
+                assert artist1 != artist2

@@ -15,11 +15,36 @@ PresetDefinition = dict[str, Any]
 # rejected so a custom preset can't crash/abuse FFmpeg or break out of the -af arg.
 _ALLOWED_FFMPEG_FILTERS = frozenset(
     {
-        "aecho", "acrusher", "atempo", "asetrate", "aresample", "equalizer",
-        "stereotools", "tremolo", "vibrato", "apulsator", "lowpass", "highpass",
-        "bandpass", "bass", "treble", "volume", "pan", "chorus", "flanger",
-        "aphaser", "afade", "loudnorm", "dynaudnorm", "compand", "asoftclip",
-        "extrastereo", "crystalizer", "earwax", "silenceremove", "superequalizer",
+        "aecho",
+        "acrusher",
+        "atempo",
+        "asetrate",
+        "aresample",
+        "equalizer",
+        "stereotools",
+        "tremolo",
+        "vibrato",
+        "apulsator",
+        "lowpass",
+        "highpass",
+        "bandpass",
+        "bass",
+        "treble",
+        "volume",
+        "pan",
+        "chorus",
+        "flanger",
+        "aphaser",
+        "afade",
+        "loudnorm",
+        "dynaudnorm",
+        "compand",
+        "asoftclip",
+        "extrastereo",
+        "crystalizer",
+        "earwax",
+        "silenceremove",
+        "superequalizer",
     }
 )
 _MAX_RAW_FILTER_LEN = 500
@@ -158,7 +183,9 @@ PRESET_DESCRIPTIONS: dict[str, str] = {
 
 def serialize_preset_definition(definition: PresetDefinition) -> str:
     """Serialize a preset definition for persistence."""
-    return json.dumps(normalize_preset_definition(definition), separators=(",", ":"), sort_keys=True)
+    return json.dumps(
+        normalize_preset_definition(definition), separators=(",", ":"), sort_keys=True
+    )
 
 
 def deserialize_preset_definition(raw: str | None) -> PresetDefinition | None:
@@ -222,7 +249,12 @@ def combine_preset_definitions(
     combined = normalize_preset_definition({})
     all_presets = dict(BUILTIN_PRESETS)
     if custom_presets:
-        all_presets.update({name.lower(): normalize_preset_definition(value) for name, value in custom_presets.items()})
+        all_presets.update(
+            {
+                name.lower(): normalize_preset_definition(value)
+                for name, value in custom_presets.items()
+            }
+        )
 
     for name in preset_names:
         key = name.lower()
@@ -288,7 +320,10 @@ def build_ffmpeg_filter_string(definition: PresetDefinition | None) -> str | Non
 
     equalizer = normalized["equalizer"]
     if equalizer:
-        eq_parts = [f"equalizer=f={_band_to_frequency(item['band'])}:width_type=h:width=200:g={item['gain'] * 30:.2f}" for item in equalizer]
+        eq_parts = [
+            f"equalizer=f={_band_to_frequency(item['band'])}:width_type=h:width=200:g={item['gain'] * 30:.2f}"
+            for item in equalizer
+        ]
         parts.extend(eq_parts)
 
     karaoke = normalized["karaoke"]
@@ -298,11 +333,15 @@ def build_ffmpeg_filter_string(definition: PresetDefinition | None) -> str | Non
 
     tremolo = normalized["tremolo"]
     if tremolo:
-        parts.append(f"tremolo=f={tremolo.get('frequency', 2.0):.2f}:d={tremolo.get('depth', 0.5):.2f}")
+        parts.append(
+            f"tremolo=f={tremolo.get('frequency', 2.0):.2f}:d={tremolo.get('depth', 0.5):.2f}"
+        )
 
     vibrato = normalized["vibrato"]
     if vibrato:
-        parts.append(f"vibrato=f={vibrato.get('frequency', 2.0):.2f}:d={vibrato.get('depth', 0.5):.2f}")
+        parts.append(
+            f"vibrato=f={vibrato.get('frequency', 2.0):.2f}:d={vibrato.get('depth', 0.5):.2f}"
+        )
 
     rotation_hz = normalized["rotation_hz"]
     if rotation_hz is not None:
@@ -314,9 +353,7 @@ def build_ffmpeg_filter_string(definition: PresetDefinition | None) -> str | Non
 
     distortion = normalized["distortion"]
     if distortion:
-        parts.append(
-            "acrusher=samples=1:bits=8:mix=0.5"
-        )
+        parts.append("acrusher=samples=1:bits=8:mix=0.5")
 
     channel_mix = normalized["channel_mix"]
     if channel_mix:
@@ -354,11 +391,15 @@ def build_wavelink_filters(definition: PresetDefinition | None) -> wavelink.Filt
 
     if normalized["tremolo"]:
         tremolo = normalized["tremolo"]
-        filters.tremolo.set(frequency=tremolo.get("frequency", 2.0), depth=tremolo.get("depth", 0.5))
+        filters.tremolo.set(
+            frequency=tremolo.get("frequency", 2.0), depth=tremolo.get("depth", 0.5)
+        )
 
     if normalized["vibrato"]:
         vibrato = normalized["vibrato"]
-        filters.vibrato.set(frequency=vibrato.get("frequency", 2.0), depth=vibrato.get("depth", 0.5))
+        filters.vibrato.set(
+            frequency=vibrato.get("frequency", 2.0), depth=vibrato.get("depth", 0.5)
+        )
 
     if normalized["rotation_hz"] is not None:
         filters.rotation.set(rotation_hz=normalized["rotation_hz"])
@@ -402,6 +443,22 @@ def get_all_preset_names(custom_filters: dict[str, PresetDefinition] | None = No
 
 
 def _band_to_frequency(band: int) -> int:
-    frequencies = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000, 18000, 20000, 22000, 24000, 26000]
+    frequencies = [
+        60,
+        170,
+        310,
+        600,
+        1000,
+        3000,
+        6000,
+        12000,
+        14000,
+        16000,
+        18000,
+        20000,
+        22000,
+        24000,
+        26000,
+    ]
     index = max(0, min(band, len(frequencies) - 1))
     return frequencies[index]
