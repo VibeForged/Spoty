@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_submodules
 
-hiddenimports = ['aiosqlite']
+hiddenimports = ['aiosqlite', 'logging.config']
 hiddenimports += collect_submodules('core')
 hiddenimports += collect_submodules('cogs')
 

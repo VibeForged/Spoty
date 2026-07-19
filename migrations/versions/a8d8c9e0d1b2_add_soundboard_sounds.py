@@ -19,22 +19,26 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "soundboard_sounds",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("guild_id", sa.BigInteger(), nullable=False),
-        sa.Column("name", sa.String(length=50), nullable=False),
-        sa.Column("url", sa.String(length=1000), nullable=False),
-        sa.Column("created_by", sa.BigInteger(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("guild_id", "name", name="uq_soundboard_guild_name"),
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    tables = inspector.get_table_names()
+    if 'soundboard_sounds' not in tables:
+        op.create_table(
+            "soundboard_sounds",
+            sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+            sa.Column("guild_id", sa.BigInteger(), nullable=False),
+            sa.Column("name", sa.String(length=50), nullable=False),
+            sa.Column("url", sa.String(length=1000), nullable=False),
+            sa.Column("created_by", sa.BigInteger(), nullable=False),
+            sa.Column(
+                "created_at",
+                sa.DateTime(),
+                server_default=sa.text("(CURRENT_TIMESTAMP)"),
+                nullable=False,
+            ),
+            sa.PrimaryKeyConstraint("id"),
+            sa.UniqueConstraint("guild_id", "name", name="uq_soundboard_guild_name"),
+        )
 
 
 def downgrade() -> None:

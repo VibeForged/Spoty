@@ -39,6 +39,7 @@ python -m PyInstaller \
   --collect-submodules core \
   --collect-submodules cogs \
   --hidden-import aiosqlite \
+  --hidden-import logging.config \
   --add-data "$ROOT/.env.example:." \
   --add-data "$ROOT/LavaLink:Lavalink" \
   --add-data "$ROOT/migrations:migrations" \

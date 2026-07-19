@@ -108,6 +108,7 @@ python -m PyInstaller `
     --collect-submodules core `
     --collect-submodules cogs `
     --hidden-import aiosqlite `
+    --hidden-import logging.config `
     --add-data "$Root\.env.example;." `
     --add-data "$Root\LavaLink;Lavalink" `
     --add-data "$Root\migrations;migrations" `
